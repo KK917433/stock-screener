@@ -1,0 +1,64 @@
+# Save this file in your repo at:  .github/workflows/screen.yml
+name: India Moat Screener
+
+on:
+  schedule:
+    - cron: "30 12 * * 1-5"            # 6:00 PM IST  -> FULL scan (continues where the last run stopped)
+    - cron: "15 4,6,8,10 * * 1-5"      # 9:45, 11:45, 13:45, 15:45 IST -> LIVE refresh (price, volume, news)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full or live"
+        default: "full"
+        type: choice
+        options: [full, live]
+      watch:
+        description: "Extra stock symbols to always track, comma separated (e.g. POLYCAB,KPITTECH)"
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screener
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests beautifulsoup4 pypdf
+
+      - name: Restore previous results from the site branch
+        run: |
+          mkdir -p site_out
+          git fetch --depth=1 origin site:refs/remotes/origin/site || true
+          git archive refs/remotes/origin/site 2>/dev/null | tar -x -C site_out || true
+
+      - name: Run screener
+        env:
+          MODE: ${{ github.event.inputs.mode || (github.event.schedule == '30 12 * * 1-5' && 'full' || 'live') }}
+          WATCH: ${{ github.event.inputs.watch }}
+          OUT_DIR: site_out
+          BUDGET_MIN: "330"
+          SCREENER_USER: ${{ secrets.SCREENER_USER }}
+          SCREENER_PASS: ${{ secrets.SCREENER_PASS }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python auto_screener.py --mode "$MODE"
+
+      - name: Publish to the site branch (single commit, so the repo never grows)
+        if: always()
+        run: |
+          if [ ! -f site_out/index.html ]; then echo "nothing to publish"; exit 0; fi
+          cd site_out
+          git init -q -b site
+          git add -A
+          git -c user.name=screener-bot -c user.email=bot@users.noreply.github.com commit -qm "site $(date -u +%F-%H%M)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:site
