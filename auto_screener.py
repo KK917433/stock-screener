@@ -178,6 +178,9 @@ NEWSLETTER_FEEDS = [
 # ============================================================================
 UNIVERSE_QUERY = "Market Capitalization > 5"   # Rs Cr. This pulls EVERY company listed on Screener. Your rules are applied in Python.
 CANDIDATE_QUERY = UNIVERSE_QUERY
+# Companies whose latest quarter is growing fast are loaded FIRST, so the best candidates appear on the dashboard early.
+PRIORITY_QUERY = ("Market Capitalization > 5 AND Net profit latest quarter > Net profit preceding year quarter * 1.25 "
+                  "AND Sales latest quarter > Sales preceding year quarter")
 MAX_PAGES = 300
 MAX_CANDIDATES = 6000
 BUDGET_MIN = 330            # time budget per full run (minutes). Unfinished work simply resumes on the next run.
@@ -385,22 +388,71 @@ def login():
     if "/login" in r.url:
         sys.exit("Screener login failed - check SCREENER_USER / SCREENER_PASS secrets.")
 
-def run_screen():
-    rows, page = [], 1
-    while page <= MAX_PAGES:
-        r = S.get(f"{BASE}/screen/raw/", params={"query": CANDIDATE_QUERY, "page": page})
+def _total_results(text):
+    """Screener says how many companies match, e.g. '5,382 results found'. Returns None if the wording is not found."""
+    for pat in (r"([\d,]+)\s+results?\s+found", r"of\s+([\d,]+)\s+results?", r"([\d,]+)\s+companies\s+match"):
+        m = re.search(pat, text, re.I)
+        if m:
+            try:
+                return int(m.group(1).replace(",", ""))
+            except ValueError:
+                pass
+    return None
+
+def screen_rows(query, max_pages=None):
+    """All companies for one Screener query. Stops when a page brings nothing new (does not rely on a 'Next' link)."""
+    rows, seen, total, page = [], set(), None, 1
+    while page <= (max_pages or MAX_PAGES):
+        try:
+            r = S.get(f"{BASE}/screen/raw/", params={"query": query, "page": page}, timeout=40)
+        except requests.RequestException:
+            time.sleep(5)
+            break
         soup = BeautifulSoup(r.text, "html.parser")
+        if page == 1:
+            total = _total_results(soup.get_text(" "))
         table = soup.select_one("table.data-table")
         if not table:
             break
-        found = 0
+        new = 0
         for tr in table.select("tr[data-row-company-id]"):
             a = tr.find("a", href=re.compile(r"^/company/"))
-            if a:
-                rows.append({"name": a.get_text(strip=True), "url": BASE + a["href"]}); found += 1
-        if not found or len(rows) >= MAX_CANDIDATES or not soup.find("a", string=re.compile("Next")):
+            if a and a["href"] not in seen:
+                seen.add(a["href"])
+                rows.append({"name": a.get_text(strip=True), "url": BASE + a["href"]})
+                new += 1
+        if new == 0 or len(rows) >= MAX_CANDIDATES:
             break
-        page += 1; time.sleep(1)
+        page += 1
+        time.sleep(0.8)
+    return rows, total
+
+def split_screen(lo=5.0, hi=1_000_000.0):
+    """Screener shows only a limited number of rows per query, so list the market in market-cap bands
+    and split any band that is still cut short, until every band is complete."""
+    out, seen, t0 = [], set(), time.time()
+    def band(a, b, depth=0):
+        rows, total = screen_rows(f"Market Capitalization > {a:.4f} AND Market Capitalization < {b:.4f}", 40)
+        for r_ in rows:
+            if r_["url"] not in seen:
+                seen.add(r_["url"])
+                out.append(r_)
+        complete = (total is not None and len(rows) >= total * 0.99) or (total is None and len(rows) < 25)
+        if not complete and b / a > 1.02 and depth < 16 and time.time() - t0 < 40 * 60:
+            mid = (a * b) ** 0.5
+            band(a, mid, depth + 1)
+            band(mid, b, depth + 1)
+    band(lo, hi)
+    return out
+
+def run_screen():
+    rows, total = screen_rows(CANDIDATE_QUERY)
+    print(f"Screener reports {total} matching companies; the single query returned {len(rows)}")
+    if len(rows) >= 300 or (total and len(rows) >= total * 0.97):
+        return rows
+    print("One query is cut short by Screener - listing the whole market in market-cap bands instead")
+    rows = split_screen()
+    print(f"Band listing found {len(rows)} companies")
     return rows
 
 def series(soup, section, labels):
@@ -677,7 +729,7 @@ def parse_company(html, row):
     m = re.search(r"/company/([^/]+)/", row["url"])
     sym = m.group(1) if m else row["name"]
     h1 = soup.find("h1")
-    nm = h1.get_text(strip=True) if (row.get("watch") and h1) else row["name"]
+    nm = h1.get_text(strip=True) if ((row.get("watch") or row.get("guess")) and h1) else row["name"]
     ab = soup.select_one(".about") or soup.select_one(".company-profile")
     about = ab.get_text(" ", strip=True)[:1500] if ab else ""
     areas = areas_of(tags, nm, about)
@@ -1623,19 +1675,45 @@ def clean(o):
         return [clean(v) for v in o]
     return o
 
+_PACE = {"delay": 1.0}
+
 def fetch_company(url):
-    # returns the page html, "" if the page does not exist, None if Screener is blocking us
-    for i in range(2):
+    """Returns the page html, "" if the page does not exist, None if Screener keeps refusing us.
+    When Screener says 'too many requests' we wait, slow our pace, and try again."""
+    for i in range(5):
         try:
             r = S.get(url, timeout=30)
         except requests.RequestException:
             time.sleep(5)
             continue
-        if r.status_code == 429 or r.status_code >= 500:
-            time.sleep(30 * (i + 1))
+        if r.status_code in (429, 403) or r.status_code >= 500:
+            try:
+                ra = int(r.headers.get("Retry-After", 0))
+            except ValueError:
+                ra = 0
+            wait = min(600, ra or 30 * (2 ** i))
+            _PACE["delay"] = min(6.0, _PACE["delay"] * 1.5)
+            print(f"Screener said HTTP {r.status_code}: waiting {wait}s and slowing to {_PACE['delay']:.1f}s per stock")
+            time.sleep(wait)
             continue
+        _PACE["delay"] = max(1.0, _PACE["delay"] * 0.97)
         return r.text if (r.status_code == 200 and "top-ratios" in r.text) else ""
     return None
+
+def exchange_universe():
+    """Fallback list of every NSE-listed company, used when Screener's own listing is cut short."""
+    import csv
+    rows = []
+    try:
+        r = requests.get("https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv", headers=UA, timeout=40)
+        if r.status_code == 200:
+            for rec in list(csv.reader(r.text.splitlines()))[1:]:
+                if len(rec) > 2 and rec[0].strip() and rec[2].strip() in ("EQ", "BE", "BZ", "SM", "ST"):
+                    sym = rec[0].strip()
+                    rows.append({"name": rec[1].strip() or sym, "url": f"{BASE}/company/{sym}/consolidated/", "guess": True})
+    except Exception as e:
+        print("NSE list failed:", e)
+    return rows
 
 def short_flags(s):
     f = s["f"]
@@ -1645,17 +1723,23 @@ def full_scan():
     t0 = time.time()
     budget = float(os.getenv("BUDGET_MIN") or BUDGET_MIN) * 60
     dl = lambda frac: t0 + budget * frac
+    scan_note = ""
     state, raw = load_state(), load_raw()
     login()
     rows = run_screen()
     print(f"Screener universe: {len(rows)} companies; {len(raw)} already saved")
+    if len(rows) < 1500:
+        have_u = {r_["url"] for r_ in rows}
+        extra_rows = [x for x in exchange_universe() if x["url"] not in have_u]
+        print(f"Screener's own listing is short - adding {len(extra_rows)} companies from the NSE list")
+        rows = rows + extra_rows
     watch = sorted(set(EXTRA_WATCHLIST) | set(state.get("watch", [])) |
                    {x for x in re.split(r"[,\s]+", os.getenv("WATCH", "").upper()) if x})
     by_sym = {}
     for r_ in rows:
         mm = re.search(r"/company/([^/]+)/", r_["url"])
         if mm:
-            by_sym[mm.group(1)] = r_
+            by_sym.setdefault(mm.group(1), r_)
     have = {k.upper() for k in by_sym}
     for w in watch:
         if w not in have:
@@ -1675,24 +1759,31 @@ def full_scan():
         if not o:
             return True
         return now - o.get("fund_at", 0) > 86400 * (1 if prio_of(o) >= 1 else FUND_REFRESH_DAYS)
+    try:
+        pri_urls = {x["url"] for x in screen_rows(PRIORITY_QUERY, 30)[0]}
+    except Exception:
+        pri_urls = set()
+    print(f"priority list (fast-growing companies, loaded first): {len(pri_urls)}")
     todo = sorted([sy for sy in by_sym if due(sy)],
-                  key=lambda sy: (sy in raw, -prio_of(raw[sy]) if sy in raw else 0, raw.get(sy, {}).get("fund_at", 0)))
+                  key=lambda sy: (sy in raw, 0 if by_sym[sy]["url"] in pri_urls else 1,
+                                  -prio_of(raw[sy]) if sy in raw else 0, raw.get(sy, {}).get("fund_at", 0)))
     print(f"phase 1: {len(todo)} stocks need fresh financials")
     done = blocked = 0
     for sym in todo:
-        if time.time() > dl(0.40):
+        if time.time() > dl(0.62):
             print("phase 1: time slice used up, will continue next run")
             break
         r_ = by_sym[sym]
         html = fetch_company(r_["url"])
         if html is None:
             blocked += 1
-            if blocked >= 3:
-                print("Screener seems to be blocking requests - stopping page fetches for this run")
+            if blocked >= 2:
+                scan_note = "Screener slowed us down; the rest loads on the next run"
+                print("Screener keeps refusing requests - stopping page fetches for this run")
                 break
             continue
         blocked = 0
-        if not html and r_.get("watch"):
+        if not html and (r_.get("watch") or r_.get("guess")):
             html = fetch_company(r_["url"].replace("/consolidated/", "/")) or ""
         if not html:
             continue
@@ -1701,8 +1792,9 @@ def full_scan():
         except Exception as e:
             print("parse failed", sym, e)
             continue
-        if r_.get("watch") and s["f"]["q_sales"] is None:
-            print("watchlist symbol not found:", sym)
+        if (r_.get("watch") or r_.get("guess")) and s["f"]["q_sales"] is None:
+            if r_.get("watch"):
+                print("watchlist symbol not found:", sym)
             continue
         if short_flags(s) >= 3 or s.get("watch"):
             s["f"]["cogs"] = fetch_cogs(html, r_["url"])
@@ -1716,14 +1808,14 @@ def full_scan():
         s["fund_at"], s["seen_at"] = time.time(), now
         raw[sym] = s
         done += 1
-        time.sleep(1.0)
-    print(f"phase 1 done: {done} stocks refreshed")
+        time.sleep(_PACE["delay"])
+    print(f"phase 1 done: {done} stocks refreshed; {len(raw)} of {len(by_sym)} universe stocks now loaded")
     save_raw(raw)
 
     # ---- phase 2: price, volume, 50/200 DMA ----
     n2 = 0
     for s in sorted(raw.values(), key=lambda x: (-prio_of(x), (x.get("m") or {}).get("ts", 0))):
-        if time.time() > dl(0.60):
+        if time.time() > dl(0.74):
             break
         if prio_of(s) < 2 and time.time() - (s.get("m") or {}).get("ts", 0) < 16 * 3600:
             continue
@@ -1741,7 +1833,7 @@ def full_scan():
         return time.time() - s.get("deep_at", 0) > {3: 0.5, 2: 1, 1: 3, 0: 10}[prio_of(s)] * 86400
     n3 = 0
     for s in sorted([x for x in raw.values() if deep_due(x)], key=lambda x: (-prio_of(x), x.get("deep_at", 0))):
-        if time.time() > dl(0.80):
+        if time.time() > dl(0.88):
             break
         try:
             s["news"] = get_news(s["name"]); time.sleep(0.5)
@@ -1780,6 +1872,8 @@ def full_scan():
     state["policy"] = policy_scan(extra)
     state["pli_news"] = pli_scan()
     state["watch"] = watch
+    state["universe_n"] = len(by_sym)
+    state["scan_note"] = scan_note
     state["full_at"] = now_ist().strftime("%d %b %Y %H:%M IST")
     save_raw(raw)
     return raw, state
@@ -1861,7 +1955,9 @@ def render(raw, state, alerts=True):
 
     summary = [{"s": v["sym"], "n": v["name"], "a": v["areas"], "t": v["sector"] or v["theme"], "c": v["mcap"], "p": v["price"],
                 "d": v["day"], "v": v["call"], "sc": v["score"], "tr": v["tier"],
-                "rv": (v["results"] or {}).get("verdict", ""), "tg": v["targets"][:3]} for v in views]
+                "rv": (v["results"] or {}).get("verdict", ""), "tg": v["targets"][:3],
+                "sy": (v["results"] or {}).get("sales_yoy"), "py": (v["results"] or {}).get("profit_yoy"),
+                "mg": (v["margin"] or {}).get("verdict", ""), "ad": v["adx"], "rs": v["rs_rank"]} for v in views]
 
     quiet = sorted([{"sym": v["sym"], "name": v["name"], "call": v["call"], "score": v["score"],
                      "rv": (v["results"] or {}).get("verdict", ""), "flat": v["accum"]["flat"], "vol": v["accum"]["vol"],
@@ -1872,7 +1968,7 @@ def render(raw, state, alerts=True):
         "pli": {"schemes": [{k: v_ for k, v_ in p_.items() if k != "kw"} for p_ in PLI_SCHEMES], "news": state.get("pli_news", []),
                 "stocks": [{"name": v["name"], "sym": v["sym"], "theme": v["theme"], "verdict": v["verdict"], "items": v["pli"]}
                            for v in featured if v["pli"]]},
-        "stocks": featured, "accum": quiet, "news": news[:60], "areas": areas, "orders": orders,
+        "coverage": {"loaded": len(views), "universe": state.get("universe_n"), "note": state.get("scan_note", "")}, "stocks": featured, "accum": quiet, "news": news[:60], "areas": areas, "orders": orders,
         "big": {"acc": acc, "deals": deals[:60], "prefs": prefs[:60]}, "brokers": brokers[:80],
         "focus_themes": [c["theme"] for c in cyc if c["stance"].startswith("FOCUS")],
         "avoid_themes": [c["theme"] for c in cyc if c["stance"] in ("AVOID", "REDUCE / AVOID")],
@@ -2060,9 +2156,9 @@ const D=__DATA__;
 const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sg=(x,d=1)=>x==null?'-':(x>0?'+':'')+Number(x).toFixed(d)+'%';
 const vcls=v=>v==='Bullish'?'g':v==='Watch'?'a':'r';
-const tabs=[['picks','Rule screen'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
+const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
 let tab='picks',q='',th='';
-document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'');
+document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'')+(D.coverage&&D.coverage.universe?'  |  Coverage: '+D.coverage.loaded+' of '+D.coverage.universe+' listed stocks loaded'+(D.coverage.note?' ('+D.coverage.note+')':''):'');
 const M=D.market||{};
 if(M.mood){const n=M.nifty,v=M.vix;document.getElementById('mood').innerHTML='<div class="mood '+(M.tone||'a')+'"><b>Market:</b> '+esc(M.mood)+(n?' <br><small>Nifty '+Math.round(n.price)+' ('+sg(n.ret1m)+' 1m)'+(v?' | VIX '+v.price.toFixed(1):'')+'</small>':'')+'</div>';}
 function nav(){document.getElementById('nav').innerHTML=tabs.map(t=>'<button class="'+(t[0]===tab?'on':'')+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</button>').join('')}
@@ -2179,6 +2275,35 @@ const urow=u=>'<div class="card" style="padding:10px" onclick="openP(\''+esc(u.s
 function themesTab(){
  const ar=D.areas||[];
  return '<div class="card"><div class="theme">Every scanned company grouped by area, whether or not it passes your rules. Pick an area to see all its stocks with the BUY / WAIT / AVOID call, the rule tier (record sales and profit plus profit breakout) and what each company says it is targeting.</div></div><select id="thsel" onchange="thSel=this.value;thShow=60;renderThemes()"><option value="">Choose an area...</option>'+ar.map(a=>'<option value="'+esc(a.area)+'"'+(a.area===thSel?' selected':'')+'>'+esc(a.area)+' ('+a.n+')</option>').join('')+'</select><div id="thres"><div class="empty">Loading all stocks...</div></div>';}
+let cmp=[],bestFilter='BUYHOLD',bestShow=30;
+function bestTab(){return '<div class="card"><div class="theme">Every loaded stock ranked best to worst by the investment score: your sales and profit rules, quarter results, cost quality, ADX trend strength, relative strength, volume, news and institutional buying. Tick up to 3 stocks and tap Compare to see them side by side.</div></div><div id="bestbox"></div>';}
+function renderBest(){
+ const el=document.getElementById('bestbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderBest);return;}
+ const f=bestFilter,tn={A:'5/5',B:'4/5',C:'3/5'};
+ const rows=U.filter(u=>f==='ALL'||(f==='BUYHOLD'?(u.v==='BUY'||u.v==='HOLD'):f==='RULES'?u.tr!=='-':u.v===f)).sort((a,b)=>b.sc-a.sc);
+ let h='<div class="links" style="flex-wrap:wrap;margin:0 0 8px">'+[['BUYHOLD','Buy + Hold'],['BUY','BUY'],['HOLD','HOLD'],['WAIT','WAIT'],['AVOID','AVOID'],['RULES','Pass rules'],['ALL','All']].map(x=>'<a href="#" style="'+(x[0]===f?'background:var(--tx);color:var(--bg)':'')+'" onclick="bestFilter=\''+x[0]+'\';bestShow=30;renderBest();return false">'+x[1]+'</a>').join('')+'</div>';
+ h+='<div class="theme" style="margin:0 2px 8px">'+rows.length+' of '+U.length+' stocks, best score first.'+(cmp.length?' Selected for compare: '+cmp.length+' of 3.':'')+'</div>';
+ if(cmp.length>=2)h+='<div class="links" style="margin:0 0 8px"><a href="#" style="background:var(--tx);color:var(--bg)" onclick="doCompare();return false">Compare '+cmp.length+' stocks</a><a href="#" onclick="cmp=[];renderBest();return false">Clear</a></div>';
+ h+=rows.slice(0,bestShow).map((u,i)=>'<div class="card" style="padding:10px"><div class="row"><div style="cursor:pointer" onclick="openP(\''+esc(u.s)+'\')"><b>'+(i+1)+'. '+esc(u.n)+'</b><div class="theme">'+esc(u.t||'')+(u.c?' | Rs '+Math.round(u.c).toLocaleString('en-IN')+' Cr':'')+'</div></div><div style="text-align:right"><span class="badge '+ccls(u.v)+'">'+esc(u.v)+'</span><div class="score '+ccls(u.v)+'" style="font-size:18px">'+u.sc+'</div></div></div><div class="kv"><div><span>Quarter</span> <b class="'+rcol(u.rv)+'">'+esc(u.rv||'-')+'</b></div><div><span>Sales YoY</span> '+pc(u.sy)+'</div><div><span>Profit YoY</span> '+pc(u.py)+'</div><div><span>Costs</span> '+esc(u.mg||'-')+'</div><div><span>ADX</span> '+(u.ad==null?'-':Math.round(u.ad))+'</div><div><span>RS</span> '+(u.rs==null?'-':u.rs)+'/99</div><div><span>Rules</span> '+(tn[u.tr]||'under 3/5')+'</div></div><label style="font-size:13px"><input type="checkbox" style="width:auto;margin:0 6px 0 0" '+(cmp.includes(u.s)?'checked':'')+' onchange="togCmp(\''+esc(u.s)+'\',this.checked)">Compare</label></div>').join('');
+ if(rows.length>bestShow)h+='<div class="links"><a href="#" onclick="bestShow+=30;renderBest();return false">Show more</a></div>';
+ el.innerHTML=h||'<div class="empty">Nothing here yet.</div>';}
+function togCmp(s,on){if(on){if(!cmp.includes(s)){if(cmp.length>=3){alert('Pick up to 3 stocks');renderBest();return;}cmp.push(s);}}else cmp=cmp.filter(x=>x!==s);renderBest();}
+function doCompare(){
+ const el=document.getElementById('bestbox');el.innerHTML='<div class="empty">Loading...</div>';
+ Promise.all(cmp.map(getStock)).then(L=>{
+  const row=(lab,fn)=>'<tr><td>'+lab+'</td>'+L.map(s=>{const v=fn(s);return '<td>'+(v==null?'-':v)+'</td>'}).join('')+'</tr>';
+  const rs=s=>s.results||{},mg=s=>s.margin||{},pl=s=>s.plan||{};
+  el.innerHTML='<div class="links" style="margin:0 0 8px"><a href="#" onclick="renderBest();return false">Back to ranking</a></div><div class="card"><div style="overflow-x:auto"><table class="ht"><tr><th></th>'+L.map(s=>'<th>'+esc(s.name)+'</th>').join('')+'</tr>'+
+  row('Call',s=>'<b class="'+ccls(s.call)+'">'+esc(s.call)+'</b>')+row('Score /100',s=>s.score)+row('Rules passed',s=>s.flags+'/5')+
+  row('Latest quarter',s=>esc(rs(s).verdict||''))+row('Sales YoY',s=>pc(rs(s).sales_yoy))+row('Profit YoY',s=>pc(rs(s).profit_yoy))+
+  row('Cost quality',s=>esc(mg(s).verdict||''))+row('Operating profit YoY',s=>pc(mg(s).op_yoy))+
+  row('ADX',s=>s.adx==null?null:Math.round(s.adx))+row('Rel. strength',s=>s.rs_rank==null?null:s.rs_rank+'/99')+
+  row('Volume vs 20-day avg',s=>s.vol_ratio==null?null:s.vol_ratio.toFixed(1)+'x')+row('P/E',s=>s.pe==null?null:Math.round(s.pe))+row('ROCE %',s=>s.roce==null?null:Math.round(s.roce))+
+  row('Debtor days',s=>s.wc&&s.wc.debtor_days!=null?Math.round(s.wc.debtor_days):null)+row('Inventory days',s=>s.wc&&s.wc.inv_days!=null?Math.round(s.wc.inv_days):null)+
+  row('Order book',s=>s.ob_text?esc(s.ob_text):null)+row('Concall tone',s=>(s.concall||{}).tone?esc(s.concall.tone):null)+row('Credit rating',s=>(s.credit||{}).rating?esc(s.credit.rating):null)+
+  row('Institutions',s=>(s.holding||{}).inst?esc(s.holding.inst):null)+row('Price',s=>s.price?'Rs '+s.price.toFixed(1):null)+row('Stop-loss',s=>pl(s).stop?'Rs '+pl(s).stop:null)+row('Targets',s=>pl(s).t1?'Rs '+pl(s).t1+' / '+pl(s).t2:null)+
+  '</table></div></div><div class="theme">The stock with the higher score and more green flags is the stronger candidate. Always read the risks on each stock page before deciding.</div>';});}
 function renderThemes(){
  const el=document.getElementById('thres');if(!el)return;
  if(!U){loadUniv().then(renderThemes);return;}
@@ -2247,7 +2372,7 @@ function brokersTab(){
  let h='<div class="card"><div class="theme">Where the big brokerages are building positions or turning positive, grouped by house (Kotak, ICICI Securities, Motilal Oswal, Axis, Nuvama, Jefferies and others). Headlines only, so open the article for the full note.</div></div>';
  h+=hs.map(w=>'<h2>'+esc(w)+' ('+H[w].length+')</h2>'+H[w].slice(0,12).map(n=>'<div class="card" style="padding:10px"><div class="row"><b style="cursor:pointer" onclick="openP(\''+esc(n.sym)+'\')">'+esc(n.name)+'</b><span class="badge '+ccls(n.scall)+'">'+esc(n.scall||'')+'</span></div><a class="nw '+(n.view>0?'p':n.view<0?'n':'')+'" style="border-top:0" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+bchips(n)+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a></div>').join('')).join('');
  return R.length?h:'<div class="empty">No brokerage headlines found yet.</div>';}
-function draw(){const a=document.getElementById('app');a.innerHTML=({picks,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();}
+function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();}
 nav();draw();
 </script></body></html>
 """
@@ -2255,12 +2380,17 @@ nav();draw();
 # ----------------------------------------------------------------------------
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["full", "live", "demo"], default="full")
+    ap.add_argument("--mode", choices=["full", "live", "demo", "catchup"], default="full")
     a = ap.parse_args()
     if a.mode == "demo":
         d = demo_data()
         raw, state = {s["sym"]: s for s in d["stocks"]}, {k: v for k, v in d.items() if k != "stocks"}
-    elif a.mode == "full":
+    elif a.mode in ("full", "catchup"):
+        if a.mode == "catchup":
+            st_, rw_ = load_state(), load_raw()
+            if st_.get("universe_n") and len(rw_) >= 0.97 * st_["universe_n"]:
+                print("All listed stocks are already loaded - nothing to catch up")
+                sys.exit(0)
         raw, state = full_scan()
     else:
         raw, state = live_refresh()
