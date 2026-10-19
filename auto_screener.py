@@ -587,6 +587,35 @@ def holding_view(hd, rows):
     return {"labels": hd[-8:], "rows": {k: v[-8:] for k, v in ser.items() if v}, "holders": holders[-8:],
             "ch": ch, "signals": sig, "inst": state}
 
+def insider_news(name):
+    """Promoter / director / insider share purchases or sales (news about SEBI insider-trading disclosures)."""
+    nm = clean_name(name)
+    first = nm.split()[0].lower() if nm.split() else ""
+    r = get("https://news.google.com/rss/search", params={
+        "q": f'"{nm}" promoter OR director OR insider OR chairman "buys shares" OR "open market" OR "increases stake" OR '
+             f'"raises stake" OR "acquires shares" OR "sells shares" OR offloads OR "pares stake" when:180d',
+        "hl": "en-IN", "gl": "IN", "ceid": "IN:en"})
+    out = []
+    if r is None:
+        return out
+    buy = ("buys", "bought", "acquires", "picks up", "increases stake", "raises stake", "hikes stake", "open market", "adds stake", "purchase")
+    sell = ("sells", "sold", "offloads", "pares stake", "reduces stake", "cuts stake", "stake sale", "dilutes")
+    who = ("promoter", "director", "insider", "chairman", "managing director", "ceo", "founder")
+    for it in feed_items(r.content, 10):
+        low = it["title"].lower()
+        if (len(first) >= 3 and first not in low) or not any(w in low for w in who):
+            continue
+        b, s_ = any(w in low for w in buy), any(w in low for w in sell)
+        if b and not s_:
+            it["kind"] = "Insider buying"
+        elif s_ and not b:
+            it["kind"] = "Insider selling"
+        else:
+            continue
+        out.append(it)
+    out.sort(key=lambda i: i["age_h"])
+    return out[:6]
+
 def investor_news(name):
     """Bulk/block deals, fund and FII stake news, preferential issues, QIPs, warrants (Google News)."""
     nm = clean_name(name)
@@ -703,6 +732,11 @@ def parse_company(html, row):
     f.update({"debtor_days": dd[-1] if dd else None, "debtor_prev": dd[-2] if len(dd) > 1 else None,
               "inv_days": iv[-1] if iv else None, "inv_prev": iv[-2] if len(iv) > 1 else None,
               "wc_ok": (all(oks) if oks else None)})
+    def cagr_(v, n):
+        if len(v) > n and v[-1] is not None and v[-1 - n] is not None and v[-1 - n] > 0 and v[-1] > 0:
+            return ((v[-1] / v[-1 - n]) ** (1.0 / n) - 1) * 100
+        return None
+    f["cagr"] = {"sales3": cagr_(ys, 3), "sales5": cagr_(ys, 5), "profit3": cagr_(yp, 3), "profit5": cagr_(yp, 5)}
     qh, qrows = grab_table(soup, "quarters")
     f["results"] = results_view(qh, qrows)
     f["margin"] = margin_view(qrows)
@@ -1276,6 +1310,101 @@ def sector_cycle(stocks, policy=None):
 # ----------------------------------------------------------------------------
 # Scoring: Bullish / Watch / Avoid with reasons
 # ----------------------------------------------------------------------------
+def multibagger(s, f, m, rs, hv, mg, call, wc_ok, rk, adx_):
+    """Early multibagger check: growing company + promoters/insiders buying + uptrend + sensible price + room to grow."""
+    ins = s.get("insider") or []
+    ibuy = any(i["kind"] == "Insider buying" and i["age_h"] <= 24 * 180 for i in ins)
+    isell = any(i["kind"] == "Insider selling" and i["age_h"] <= 24 * 180 for i in ins)
+    cg = f.get("cagr") or {}
+    p3, s3 = cg.get("profit3"), cg.get("sales3")
+    pch = ((hv or {}).get("ch") or {}).get("promoters") or {}
+    py, ph = pch.get("y"), pch.get("now")
+    pyoy, syoy = (rs or {}).get("profit_yoy"), (rs or {}).get("sales_yoy")
+    verdict = (rs or {}).get("verdict")
+    pe, mcap, pledged = f.get("pe"), f.get("mcap"), f.get("pledged") or 0
+    price, d200 = m.get("price"), m.get("dma200")
+    sc, why, risks = 0, [], []
+    growing = bool(verdict in ("Excellent", "Good") and pyoy is not None and pyoy >= 20 and (syoy is None or syoy >= 10))
+    if p3 is not None:
+        sc += 12 if p3 >= 30 else 9 if p3 >= 20 else 6 if p3 >= 15 else 0
+    if s3 is not None:
+        sc += 6 if s3 >= 20 else 3 if s3 >= 12 else 0
+    sc += 7 if verdict == "Excellent" else 4 if verdict == "Good" else 0
+    sc += 8 if (mg or {}).get("verdict") == "Excellent" else 4 if (mg or {}).get("verdict") == "Good" else 0
+    tier_pts = sum(bool(f.get(k)) for k in ("ath_q_sales", "ath_q_profit", "ath_y_sales", "ath_y_profit", "profit_breakout"))
+    sc += {5: 7, 4: 5, 3: 2}.get(tier_pts, 0)
+    if ph is not None:
+        sc += 5 if ph >= 60 else 4 if ph >= 50 else 2 if ph >= 40 else 0
+    prom_up = py is not None and py >= 0.3
+    prom_sell = py is not None and py <= -1
+    if py is not None:
+        sc += 8 if py >= 1 else 5 if prom_up else -10 if py <= -2 else -4 if prom_sell else 0
+    if ibuy:
+        sc += 8
+        why.append("Promoters / directors buying shares (insider buying headlines)")
+    if isell:
+        sc -= 10
+        risks.append("Insider / promoter selling headlines")
+    if pledged >= 10:
+        sc -= 8
+        risks.append(f"Promoters pledged {pledged:.0f}% of shares")
+    if hv:
+        inst = hv.get("inst")
+        sc += 6 if inst == "Accumulating" else -4 if inst == "Reducing" else 0
+        if any("New " in x["t"] for x in hv.get("signals", [])):
+            sc += 3
+    if rk is not None:
+        sc += 6 if rk >= 80 else 3 if rk >= 60 else -3 if rk < 30 else 0
+    uptrend = None if not (price and d200) else price > d200
+    if uptrend:
+        sc += 3
+    if adx_ is not None and adx_ >= 25 and (m.get("pdi") or 0) > (m.get("mdi") or 0):
+        sc += 3
+    if s.get("m") and (m.get("vol_ratio") or 0) >= 1.5 and (m.get("ret5d") or 0) < 4 and verdict in ("Excellent", "Good"):
+        sc += 4
+    peg = (pe / p3) if (pe and p3 and p3 > 0) else None
+    if peg is not None:
+        sc += 5 if peg <= 1 else 3 if peg <= 1.5 else 1 if peg <= 2 else -5 if peg > 3 else 0
+    if pe and pe > 80:
+        sc -= 5
+    if mcap:
+        sc += 4 if mcap < 2000 else 3 if mcap < 10000 else 0 if mcap < 30000 else -5 if mcap >= 50000 else -2
+    if f.get("roce"):
+        sc += 5 if f["roce"] >= 25 else 3 if f["roce"] >= 18 else 0
+    sc += 2 if wc_ok else -4 if wc_ok is False else 0
+    sc = max(0, min(100, round(sc)))
+    promoter_ok = bool(prom_up or ibuy)
+    not_selling = not prom_sell and not isell and pledged < 10
+    size_ok = None if not mcap else mcap <= 30000
+    val_ok = None if not pe else (pe <= 60 or (peg is not None and peg <= 2))
+    gates = [
+        {"t": "Company is growing: latest quarter profit " + (f"{pyoy:+.0f}%" if pyoy is not None else "n/a") + " and sales " +
+              (f"{syoy:+.0f}%" if syoy is not None else "n/a") + " year on year", "ok": growing if rs else None},
+        {"t": "Long-run growth: profit " + (f"{p3:.0f}% a year over 3 years" if p3 is not None else "history not available"),
+         "ok": None if p3 is None else p3 >= 15},
+        {"t": "Promoters raising their stake or insiders buying" + (f" (promoter holding {ph:.1f}%, {py:+.1f} pts in a year)" if ph is not None and py is not None else ""),
+         "ok": promoter_ok if (hv or s.get("insider")) else None},
+        {"t": "Nobody selling: promoters not reducing, no pledged shares, no insider selling", "ok": not_selling if hv else None},
+        {"t": "Price in an uptrend (above its 200-day average)", "ok": uptrend},
+        {"t": "Valuation not stretched" + (f" (P/E {pe:.0f}" + (f", PEG {peg:.1f}" if peg is not None else "") + ")" if pe else ""), "ok": val_ok},
+        {"t": "Room to grow" + (f": market cap Rs {mcap:,.0f} Cr" if mcap else ""), "ok": size_ok},
+        {"t": "Working capital healthy (debtor and inventory days not rising)", "ok": wc_ok},
+        {"t": "Tradable: not flagged AVOID", "ok": call != "AVOID"},
+    ]
+    must = [growing, promoter_ok, not_selling, uptrend is not False, size_ok is not False, val_ok is not False,
+            call != "AVOID", wc_ok is not False]
+    if sc >= 70 and all(must) and hv:
+        mcall = "MULTIBAGGER BUY"
+    elif sc >= 55 and growing and not_selling and call != "AVOID":
+        mcall = "STRONG WATCH"
+    else:
+        mcall = ""
+    for g in gates:
+        if g["ok"] is True:
+            why.append(g["t"])
+    return {"score": sc, "call": mcall, "gates": gates, "why": why[:6], "risks": risks, "pu": py, "ph": ph, "p3": p3,
+            "insider_buy": ibuy}
+
 def build_view(s, cyc):
     f, m, news = s["f"], s.get("m") or {}, s.get("news", [])
     why, risks, score = [], [], 0
@@ -1552,6 +1681,7 @@ def build_view(s, cyc):
             if nm_ not in custs:
                 custs[nm_] = {"name": nm_, "region": CUSTOMERS.get(nm_, ""), "n": 1, "ctx": it["title"][:220], "src": "news", "link": it["link"]}
     customers = sorted(custs.values(), key=lambda c: -c["n"])[:8]
+    mb = multibagger(s, f, m, rs, hv, mg, call, wc_ok, rk, adx_)
     sym = s["sym"]
     return {
         "sym": sym, "name": s["name"], "theme": s["theme"], "tier": tier, "flags": flags, "score": score,
@@ -1566,7 +1696,7 @@ def build_view(s, cyc):
         "watch": bool(s.get("watch")), "pledged": f.get("pledged"),
         "adx": adx_, "pdi": pdi_, "mdi": mdi_, "rs_rank": rk, "rs_nifty6m": m.get("rs_nifty6m"),
         "margin": mg, "cogs": cg, "accum": accum_info, "ret2d": m.get("ret2d"), "ret5d": m.get("ret5d"),
-        "call": call, "areas": s.get("areas", []),
+        "call": call, "areas": s.get("areas", []), "mb": mb, "insider": s.get("insider") or [], "cagr": f.get("cagr"),
         "targets": [x["area"] for x in cc.get("targets", [])], "about": (s.get("about") or "")[:420],
         "customers": customers, "orders": s.get("orders", []),
         "links": {"screener": s["url"], "chart": f"https://in.tradingview.com/chart/?symbol=NSE%3A{sym}",
@@ -1600,6 +1730,11 @@ def do_alerts(views, data):
     msgs = []
     today = now_ist().strftime("%Y-%m-%d")
     for v in views:
+        k = f"{v['sym']}|multibagger"
+        if v["mb"]["call"] == "MULTIBAGGER BUY" and k not in done:
+            msgs.append(f"MULTIBAGGER BUY: {v['name']} ({v['theme']})\nMulti-bagger score {v['mb']['score']}/100. "
+                        + "; ".join(v["mb"]["why"][:3]) + f"\n{v['links']['screener']}")
+            done.add(k)
         if v["verdict"] == "Avoid":
             continue
         k = f"{v['sym']}|tier{v['tier']}"
@@ -1633,7 +1768,7 @@ def load_data():
         return None
 
 RAW_SHARDS = 16
-KEEP_KEYS = ("m", "news", "concall", "credit", "broker", "pli", "invest", "orders", "deep_at", "enrich_key", "enrich_tries")
+KEEP_KEYS = ("m", "news", "concall", "credit", "broker", "pli", "invest", "insider", "orders", "deep_at", "enrich_key", "enrich_tries")
 
 def safe_sym(sym):
     return re.sub(r"[^A-Za-z0-9_.-]", "_", sym)
@@ -1839,6 +1974,7 @@ def full_scan():
             s["news"] = get_news(s["name"]); time.sleep(0.5)
             s["pli"] = pli_stock(s["name"]); time.sleep(0.4)
             s["invest"] = investor_news(s["name"])
+            s["insider"] = insider_news(s["name"]); time.sleep(0.4)
             s["orders"] = orders_news(s["name"]); time.sleep(0.4)
             s["broker"] = broker_view(s["name"]); time.sleep(0.4)
             s["deep_at"] = time.time()
@@ -1957,7 +2093,10 @@ def render(raw, state, alerts=True):
                 "d": v["day"], "v": v["call"], "sc": v["score"], "tr": v["tier"],
                 "rv": (v["results"] or {}).get("verdict", ""), "tg": v["targets"][:3],
                 "sy": (v["results"] or {}).get("sales_yoy"), "py": (v["results"] or {}).get("profit_yoy"),
-                "mg": (v["margin"] or {}).get("verdict", ""), "ad": v["adx"], "rs": v["rs_rank"]} for v in views]
+                "mg": (v["margin"] or {}).get("verdict", ""), "ad": v["adx"], "rs": v["rs_rank"],
+                "mb": v["mb"]["score"], "mbc": v["mb"]["call"], "pu": v["mb"]["pu"], "ph": v["mb"]["ph"],
+                "ib": 1 if v["mb"]["insider_buy"] else 0, "pg": v["mb"]["p3"],
+                "vr": round(v["vol_ratio"], 1) if v.get("vol_ratio") else None} for v in views]
 
     quiet = sorted([{"sym": v["sym"], "name": v["name"], "call": v["call"], "score": v["score"],
                      "rv": (v["results"] or {}).get("verdict", ""), "flat": v["accum"]["flat"], "vol": v["accum"]["vol"],
@@ -2063,10 +2202,15 @@ def demo_data():
         s["f"]["cogs"] = {"now": 52, "yr": 56, "q": 53} if i % 2 == 0 else None
         if i in (0, 3):
             s["f"]["results"]["verdict"] = "Excellent"
+            s["f"]["results"].update(profit_yoy=45.0, sales_yoy=28.0)
             s["m"].update(ret2d=0.4, ret5d=1.1, ret1m=3.0, vol_ratio=1.9, vol_max3=2.2, dma200=s["m"]["price"] * 0.9)
         up = 1 if i % 3 != 2 else -1
+        s["f"]["cagr"] = {"sales3": random.uniform(8, 35), "sales5": 15, "profit3": random.uniform(10, 45), "profit5": 20}
+        if i % 3 == 0:
+            s["insider"] = [{"title": f"Promoter buys 1.5 lakh shares of {s['name']} in open market", "link": "https://example.com",
+                             "src": "Demo Wire", "ago": "9d ago", "age_h": 216, "s": 1, "kind": "Insider buying"}]
         s["holding"] = holding_view(ql, {
-            "promoters": [round(55 - up * k * 0.1, 1) for k in range(8)],
+            "promoters": [round(55 + (0.15 if i % 2 == 0 else -0.1) * k, 1) for k in range(8)],
             "fiis": [round(4 + up * k * 0.4, 1) for k in range(8)],
             "diis": [round(0.5 + up * k * 0.5 + (3 if up > 0 else 6), 1) for k in range(8)],
             "government": [0.1] * 8, "public": [round(40 - up * k * 0.3, 1) for k in range(8)],
@@ -2156,7 +2300,7 @@ const D=__DATA__;
 const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sg=(x,d=1)=>x==null?'-':(x>0?'+':'')+Number(x).toFixed(d)+'%';
 const vcls=v=>v==='Bullish'?'g':v==='Watch'?'a':'r';
-const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
+const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['mb','Multibagger'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
 let tab='picks',q='',th='';
 document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'')+(D.coverage&&D.coverage.universe?'  |  Coverage: '+D.coverage.loaded+' of '+D.coverage.universe+' listed stocks loaded'+(D.coverage.note?' ('+D.coverage.note+')':''):'');
 const M=D.market||{};
@@ -2170,7 +2314,7 @@ function card(s){
  const nw=s.news.slice(0,3).map(n=>'<a class="nw '+(n.s>0?'p':n.s<0?'n':'')+'" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a>').join('');
  return '<div class="card"><div class="row"><div><div class="name">'+esc(s.name)+'</div><div class="theme">'+esc(s.theme)+' | Tier '+esc(s.tier)+' ('+s.flags+'/5 rules)</div></div>'+
  '<div><div class="score '+vc+'">'+s.score+'<small>/100</small></div></div></div>'+
- '<div style="margin-top:6px"><span class="badge '+vc+'">'+esc(s.call||s.verdict)+'</span></div>'+rline(s)+mline(s)+
+ '<div style="margin-top:6px"><span class="badge '+vc+'">'+esc(s.call||s.verdict)+'</span></div>'+rline(s)+mline(s)+mbBlock(s)+
  '<div class="kv"><div><span>Price</span> '+(s.price?'Rs '+s.price.toFixed(1):'-')+' <b class="'+(s.day>0?'g':'r')+'">'+sg(s.day)+'</b></div>'+
  '<div><span>Volume</span> <b class="'+(s.vol_ratio>=1.5?'g':'')+'">'+(s.vol_ratio?s.vol_ratio.toFixed(1)+'x avg':'-')+'</b></div>'+
  '<div><span>Liquidity</span> '+(s.turnover_cr!=null?'Rs '+s.turnover_cr.toFixed(1)+' Cr/day':'-')+'</div>'+
@@ -2275,6 +2419,32 @@ const urow=u=>'<div class="card" style="padding:10px" onclick="openP(\''+esc(u.s
 function themesTab(){
  const ar=D.areas||[];
  return '<div class="card"><div class="theme">Every scanned company grouped by area, whether or not it passes your rules. Pick an area to see all its stocks with the BUY / WAIT / AVOID call, the rule tier (record sales and profit plus profit breakout) and what each company says it is targeting.</div></div><select id="thsel" onchange="thSel=this.value;thShow=60;renderThemes()"><option value="">Choose an area...</option>'+ar.map(a=>'<option value="'+esc(a.area)+'"'+(a.area===thSel?' selected':'')+'>'+esc(a.area)+' ('+a.n+')</option>').join('')+'</select><div id="thres"><div class="empty">Loading all stocks...</div></div>';}
+let mbShow=30;
+function mbBlock(s){const m=s.mb;if(!m||!m.gates)return '';const ins=s.insider||[];return '<div class="card" style="margin:8px 0 0;padding:10px;background:var(--bg)"><div class="sec">Multibagger check: <b class="'+(m.call==='MULTIBAGGER BUY'?'g':m.call?'a':'r')+'">'+esc(m.call||'Not yet')+'</b> ('+m.score+'/100)</div>'+m.gates.map(g=>'<div style="font-size:13px" class="'+(g.ok===true?'g':g.ok===false?'r':'')+'">'+(g.ok===true?'Yes':g.ok===false?'No':'?')+' - '+esc(g.t)+'</div>').join('')+(ins.length?'<div class="theme" style="margin-top:6px">Insider / promoter headlines</div>'+ins.map(n=>'<a class="nw '+(n.kind==='Insider buying'?'p':'n')+'" href="'+esc(n.link)+'" target="_blank" rel="noopener"><span class="chip">'+esc(n.kind)+'</span>'+esc(n.title)+' <small>'+esc(n.ago)+'</small></a>').join(''):'')+'</div>';}
+function mbTab(){return '<div class="card"><div class="theme">Early multibagger hunt. A stock gets MULTIBAGGER BUY only when the company is clearly growing, promoters are raising their stake or insiders are buying, nobody is selling or pledging, the price is in an uptrend, the valuation is not stretched and the company is still small enough to grow several times. STRONG WATCH means most of this is true but one proof is missing. Insider buying comes from news about promoter and director purchases. Promoter stake comes from the quarterly shareholding table.</div></div><div id="mbbox"></div>';}
+function renderMb(){
+ const el=document.getElementById('mbbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderMb);return;}
+ const all=U.filter(u=>u.mb!=null).sort((a,b)=>b.mb-a.mb);
+ const buy=all.filter(u=>u.mbc==='MULTIBAGGER BUY'),watch=all.filter(u=>u.mbc==='STRONG WATCH');
+ const row=(u,i)=>'<div class="card" style="padding:10px;cursor:pointer" onclick="openP(\''+esc(u.s)+'\')"><div class="row"><div><b>'+(i+1)+'. '+esc(u.n)+'</b><div class="theme">'+esc(u.t||'')+(u.c?' | Rs '+Math.round(u.c).toLocaleString('en-IN')+' Cr':'')+'</div></div><div style="text-align:right"><span class="badge '+(u.mbc==='MULTIBAGGER BUY'?'g':u.mbc?'a':'r')+'">'+esc(u.mbc||'Not yet')+'</span><div class="score" style="font-size:18px">'+u.mb+'</div></div></div><div class="kv"><div><span>Profit YoY</span> <b>'+pc(u.py)+'</b></div><div><span>Sales YoY</span> '+pc(u.sy)+'</div><div><span>3y profit growth</span> '+(u.pg==null?'-':Math.round(u.pg)+'%/yr')+'</div><div><span>Promoter</span> '+(u.ph==null?'-':u.ph.toFixed(1)+'%')+(u.pu==null?'':' <b class="'+(u.pu>=0.3?'g':u.pu<=-1?'r':'')+'">('+(u.pu>0?'+':'')+u.pu.toFixed(1)+' pts/yr)</b>')+'</div><div><span>Insider buying</span> '+(u.ib?'<b class="g">Yes</b>':'No')+'</div><div><span>Overall call</span> <b class="'+ccls(u.v)+'">'+esc(u.v)+'</b></div></div></div>';
+ let h='<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><b class="g">'+buy.length+'</b><span>Multibagger BUY</span></div><div class="stat"><b class="a">'+watch.length+'</b><span>Strong watch</span></div><div class="stat"><b>'+U.length+'</b><span>Stocks loaded</span></div></div>';
+ h+='<h2 class="g">Multibagger BUY ('+buy.length+')</h2>'+(buy.length?buy.slice(0,mbShow).map(row).join(''):'<div class="empty">No stock passes every test right now.</div>');
+ h+='<h2 class="a">Strong watch ('+watch.length+')</h2>'+(watch.length?watch.slice(0,mbShow).map(row).join(''):'<div class="empty">None.</div>');
+ if(!buy.length&&!watch.length)h+='<h2>Closest to qualifying</h2>'+all.slice(0,15).map(row).join('');
+ el.innerHTML=h;}
+let volMin=1.5,volF='GOOD';
+function volTab(){const sel=(v,c)=>v==c?' selected':'';return '<div class="card"><div class="theme">Stocks trading on much higher volume than usual: today\'s volume compared with the 20-day average. 1.5x or more means big buyers or sellers are active. High volume is a buy clue only when the price is rising and the results are good, so the default filter shows exactly that. High volume on a falling price is selling. During market hours the volume so far is partial, so the multiple looks lower than it will at the close.</div></div><select onchange="volMin=+this.value;renderVol()"><option value="1.5"'+sel(volMin,1.5)+'>1.5x or more</option><option value="2"'+sel(volMin,2)+'>2x or more</option><option value="3"'+sel(volMin,3)+'>3x or more</option></select><select onchange="volF=this.value;renderVol()"><option value="GOOD"'+sel(volF,'GOOD')+'>Price rising + good results</option><option value="UP"'+sel(volF,'UP')+'>Price rising</option><option value="BUY"'+sel(volF,'BUY')+'>BUY / HOLD calls only</option><option value="ALL"'+sel(volF,'ALL')+'>All (including falling)</option></select><div id="volbox"></div>';}
+function renderVol(){
+ const el=document.getElementById('volbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderVol);return;}
+ let r=U.filter(u=>u.vr!=null&&u.vr>=volMin);
+ if(volF==='UP')r=r.filter(u=>(u.d||0)>0);
+ else if(volF==='GOOD')r=r.filter(u=>(u.d||0)>0&&(u.rv==='Excellent'||u.rv==='Good'));
+ else if(volF==='BUY')r=r.filter(u=>u.v==='BUY'||u.v==='HOLD');
+ r.sort((a,b)=>b.vr-a.vr);
+ const row=(u,i)=>'<div class="card" style="padding:10px;cursor:pointer" onclick="openP(\''+esc(u.s)+'\')"><div class="row"><div><b>'+(i+1)+'. '+esc(u.n)+'</b><div class="theme">'+esc(u.t||'')+(u.c?' | Rs '+Math.round(u.c).toLocaleString('en-IN')+' Cr':'')+'</div></div><div style="text-align:right"><span class="badge '+ccls(u.v)+'">'+esc(u.v)+'</span><div class="theme">score '+u.sc+'</div></div></div><div class="kv"><div><span>Volume</span> <b class="g">'+u.vr.toFixed(1)+'x average</b></div><div><span>Price today</span> <b class="'+((u.d||0)>0?'g':'r')+'">'+pc(u.d)+'</b></div><div><span>Quarter</span> <b class="'+rcol(u.rv)+'">'+esc(u.rv||'-')+'</b></div><div><span>Profit YoY</span> '+pc(u.py)+'</div><div><span>Multibagger</span> '+esc(u.mbc||'-')+'</div></div></div>';
+ el.innerHTML='<div class="stats" style="grid-template-columns:repeat(2,1fr)"><div class="stat"><b>'+r.length+'</b><span>Stocks match</span></div><div class="stat"><b>'+U.filter(u=>u.vr!=null&&u.vr>=1.5).length+'</b><span>Above 1.5x volume (all)</span></div></div>'+(r.length?r.slice(0,40).map(row).join(''):'<div class="empty">No stock matches these filters right now. Loosen the filters above.</div>');}
 let cmp=[],bestFilter='BUYHOLD',bestShow=30;
 function bestTab(){return '<div class="card"><div class="theme">Every loaded stock ranked best to worst by the investment score: your sales and profit rules, quarter results, cost quality, ADX trend strength, relative strength, volume, news and institutional buying. Tick up to 3 stocks and tap Compare to see them side by side.</div></div><div id="bestbox"></div>';}
 function renderBest(){
@@ -2372,7 +2542,7 @@ function brokersTab(){
  let h='<div class="card"><div class="theme">Where the big brokerages are building positions or turning positive, grouped by house (Kotak, ICICI Securities, Motilal Oswal, Axis, Nuvama, Jefferies and others). Headlines only, so open the article for the full note.</div></div>';
  h+=hs.map(w=>'<h2>'+esc(w)+' ('+H[w].length+')</h2>'+H[w].slice(0,12).map(n=>'<div class="card" style="padding:10px"><div class="row"><b style="cursor:pointer" onclick="openP(\''+esc(n.sym)+'\')">'+esc(n.name)+'</b><span class="badge '+ccls(n.scall)+'">'+esc(n.scall||'')+'</span></div><a class="nw '+(n.view>0?'p':n.view<0?'n':'')+'" style="border-top:0" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+bchips(n)+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a></div>').join('')).join('');
  return R.length?h:'<div class="empty">No brokerage headlines found yet.</div>';}
-function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();}
+function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,mb:mbTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='mb')renderMb();if(tab==='vol')renderVol();}
 nav();draw();
 </script></body></html>
 """
