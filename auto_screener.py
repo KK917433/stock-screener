@@ -62,7 +62,8 @@ MAX_CANDIDATES = 600          # safety cap on how many Screener results are anal
 # Symbols (as on Screener.in, e.g. POLYCAB) that are ALWAYS tracked and searchable, even if they fail your rules.
 # You can also add symbols without editing code: Actions > Run workflow > "watch" box.
 EXTRA_WATCHLIST = []
-FILING_KW = ["preferential", "warrant", "qip", "rights issue", "allotment", "fund rais", "capital rais", "open offer",
+FILING_KW = ["receipt of order", "bagging", "bags order", "order worth", "letter of award", "purchase order", "work order",
+             "new order", "supply order", "preferential", "warrant", "qip", "rights issue", "allotment", "fund rais", "capital rais", "open offer",
              "stake", "acquisition", "subscription", "buyback", "bulk deal", "block deal"]
 ONLY_THEMES = False   # False = scan ALL sectors (your 5 priority themes are still labelled separately)
 
@@ -201,29 +202,41 @@ AREAS = {
         "queries": ["Ministry of Mines critical minerals auction India", "Cabinet approves critical mineral mission India"]},
     "Precision engineering & components": {
         "tags": ["precision", "forging", "castings", "bearing"],
-        "text": ["precision engineering", "precision component", "precision machining", "forgings", "castings", "machined components", "cnc machining"],
+        "text": ["precision engineering", "precision component", "precision machining", "forgings", "castings", "machined components", "cnc machining",
+                 "close tolerance", "investment casting", "turned components", "machined parts", "critical components"],
         "drivers": "Global supply chains adding India as a source, long qualification cycles with OEMs (high entry barrier), aerospace, energy and defence demand.",
         "risks": "Concentrated customers, lumpy orders, currency swings, premium valuations.",
         "queries": ["precision engineering exports India aerospace supply chain", "India manufacturing scheme precision components"]},
     "Electronics & EMS": {
         "tags": ["electronic"],
-        "text": ["electronics manufacturing services", "pcb", "printed circuit", "electronic components", "box build"],
+        "text": ["electronics manufacturing services", "pcb", "printed circuit", "electronic components", "box build", "mobile phone", "smartphone",
+                 "mobile components", "enclosures", "camera module", "display module", "wearables", "charger"],
         "drivers": "PLI and component schemes, phone and consumer electronics localisation, export growth.",
         "risks": "Thin margins in assembly, subsidy dependence, customer concentration, working-capital strain.",
         "queries": ["PLI electronics components scheme approval", "Cabinet approves electronics manufacturing India"]},
     "Semiconductors": {
         "tags": ["semiconductor"],
-        "text": ["semiconductor", "osat", "chip design", "wafer", "fabless", "vlsi"],
+        "text": ["semiconductor", "osat", "chip design", "wafer", "fabless", "vlsi", "semiconductor equipment", "cleanroom",
+                 "ultra high purity", "test and assembly", "vacuum components"],
         "drivers": "India Semiconductor Mission incentives, fabs and OSAT plants being set up, design-linked incentives.",
         "risks": "Long gestation, very high capital needs, technology and subsidy dependence, rich valuations.",
         "queries": ["India Semiconductor Mission approval", "semiconductor fab OSAT India Cabinet approves"]},
     "Nuclear": {
         "tags": [],
         "name": ["nuclear"],
-        "text": ["nuclear", "atomic energy", "npcil", "small modular reactor", "heavy water"],
+        "text": ["nuclear", "atomic energy", "npcil", "small modular reactor", "heavy water", "reactor components", "pressure tubes",
+                 "nuclear fuel", "fuel handling", "steam generator", "bhavini", "department of atomic energy"],
         "drivers": "Government push to expand nuclear capacity, opening of the sector to private firms, small modular reactor plans, heavy-equipment and component orders.",
         "risks": "Very long project cycles, liability and approval uncertainty, state-utility customer concentration.",
         "queries": ["nuclear power India Cabinet approves", "small modular reactor India NPCIL private sector"]},
+    "Ammunition & explosives": {
+        "tags": ["explosives", "ammunition"],
+        "name": ["ammunition", "explosive", "munition"],
+        "text": ["ammunition", "artillery shell", "gun shell", "shells", "fuze", "propellant", "explosives", "detonator", "warhead",
+                 "small arms", "munitions"],
+        "drivers": "Self-reliance in ammunition, replenishing stockpiles, rising exports; long licensing and safety approvals keep entry hard.",
+        "risks": "Lumpy government orders, safety incidents, working capital, export licence delays.",
+        "queries": ["Ministry of Defence ammunition order India", "artillery shell contract Indian company", "India ammunition exports"]},
     "Transmission, transformers & T&D": {
         "tags": ["transformer", "electrical equipment", "cable", "power equipment", "transmission", "switchgear"],
         "text": ["transformer", "switchgear", "transmission line", "power cable", "conductor", "substation", "hvdc", "insulator"],
@@ -328,6 +341,13 @@ _CUST = {
               "Mahindra", "Maruti", "Tata Electronics", "Bharat Forge", "Hindustan Copper", "GAIL", "IOCL", "Indian Oil", "BPCL",
               "HPCL", "Thermax", "Titagarh", "Jio", "Airtel", "BSNL", "Ministry of Defence", "Defence Ministry"],
 }
+_CUST["Global"] += ["ASML", "Applied Materials", "Lam Research", "KLA", "Tokyo Electron", "Analog Devices", "NXP", "Renesas", "Amkor",
+                    "Pegatron", "Wistron", "Flex", "Jabil", "Oppo", "Vivo", "Motorola", "General Dynamics", "Nammo", "Nexter", "KNDS",
+                    "Rosatom", "Holtec", "NuScale", "Framatome", "EDF", "AtkinsRealis", "GKN", "Magellan Aerospace", "Triumph Group",
+                    "Howmet", "Precision Castparts", "Doosan", "Bechtel", "Fluor"]
+_CUST["India"] += ["Munitions India", "Armoured Vehicles Nigam", "AVNL", "Gun and Shell Factory", "Yantra India", "Troop Comforts",
+                   "Advanced Weapons and Equipment India", "BHAVINI", "Department of Atomic Energy", "DAE", "Nuclear Power Corporation",
+                   "Solar Industries", "Data Patterns", "Dixon", "GRSE", "Garden Reach", "BEML", "MIDHANI", "Mishra Dhatu", "Hindustan Shipyard"]
 CUSTOMERS = {n: reg for reg, names in _CUST.items() for n in names}
 CUST_RE = re.compile(r"(?<![A-Za-z])(" + "|".join(re.escape(n) for n in sorted(CUSTOMERS, key=len, reverse=True)) + r")(?![A-Za-z])")
 CUST_TRIG = re.compile(r"order|contract|supply|supplier|partner|agreement|mou|customer|client|qualif|vendor|approved|awarded|won |win |tie[- ]up|collaborat|joint venture|licen|share of wallet", re.I)
@@ -994,6 +1014,11 @@ def pdf_text(url, max_pages=40):
     except Exception:
         return ""
 
+CERT_KW = ["AS9100", "AS 9100", "NADCAP", "ASME", "N-stamp", "NQA-1", "IATF 16949", "CEMILAC", "DGAQA", "ISO 13485", "API 6A"]
+QUAL_RE = re.compile(r"approved vendor|vendor approval|qualif(?:ied|ication)|first article|PPAP|sole[- ]source|single[- ]source|"
+                     r"long[- ]term agreement|\bLTA\b|framework agreement|rate contract|repeat order|development order", re.I)
+TOPCUST_RE = re.compile(r"(?:top|largest|biggest|single|one)\s+(?:\w+\s+){0,2}customers?[^.%]{0,60}?(\d{1,2})\s*%", re.I)
+
 def analyse_transcript(text):
     text = re.sub(r"\s+", " ", text)
     sents = [x.strip() for x in re.split(r"(?<=[.?!])\s+", text) if 40 <= len(x) <= 320]
@@ -1018,7 +1043,10 @@ def analyse_transcript(text):
     return {"tone": tone, "ob_cr": ob_cr, "ob_text": ob_text, "order_book": [cut(x) for x in (book[:2] + flow[:1])][:3],
             "guidance": [cut(x) for x in guid[:2]], "capex": [cut(x) for x in capex[:2]], "risks": [cut(x) for x in risks[:2]],
             "targets": target_areas(low), "focus": [cut(x) for x in sents if FOCUS_RE.search(x)][:3],
-            "customers": customer_scan(sents)}
+            "customers": customer_scan(sents),
+            "certs": sorted({c for c in CERT_KW if re.search(r"(?<![A-Za-z0-9])" + re.escape(c) + r"(?![A-Za-z0-9])", text, re.I)}),
+            "quals": [cut(x) for x in sents if QUAL_RE.search(x)][:3],
+            "top_cust_pct": next((int(m_.group(1)) for m_ in (TOPCUST_RE.search(x) for x in sents) if m_), None), "v": 3}
 
 def parse_rating(text, link_text):
     m = RATING_RE.search(text or "")
@@ -1032,7 +1060,7 @@ def enrich(s, prev):
     d = s.get("docs") or {}
     tr = d.get("transcript")
     if tr:
-        if (prev.get("concall") or {}).get("link") == tr:
+        if (prev.get("concall") or {}).get("link") == tr and (prev.get("concall") or {}).get("v") == 3:
             s["concall"] = prev["concall"]
         else:
             txt = pdf_text(tr)
@@ -1086,24 +1114,29 @@ def customer_scan(sents, src="concall", link=""):
                 d["ctx"] = x[:220]
     return sorted(found.values(), key=lambda d: -d["n"])[:8]
 
+def amt_cr_of(text):
+    m = VAL_RE.search(text or "")
+    return to_cr(m.group(1), m.group(2)) if m else None
+
 def orders_news(name):
     nm = clean_name(name)
     first = nm.split()[0].lower() if nm.split() else ""
     r = get("https://news.google.com/rss/search", params={
-        "q": f'"{nm}" order OR contract OR partnership OR "supply agreement" OR MoU when:120d',
+        "q": f'"{nm}" order OR contract OR partnership OR "supply agreement" OR MoU when:180d',
         "hl": "en-IN", "gl": "IN", "ceid": "IN:en"})
     out = []
     if r is None:
         return out
-    for it in feed_items(r.content, 10):
+    for it in feed_items(r.content, 14):
         low = it["title"].lower()
         if len(first) >= 3 and first not in low:
             continue
         if not re.search(r"order|contract|partner|supply|agreement|mou|tie-up|collaborat|bags|secures|wins", low):
             continue
         it["cust"] = [d["name"] for d in customer_scan([it["title"]], "news", it["link"])]
+        it["amt_cr"] = amt_cr_of(it["title"])
         out.append(it)
-    return out[:6]
+    return out[:8]
 
 def broker_view(name):
     out, seen = [], set()
@@ -1631,6 +1664,32 @@ def build_view(s, cyc):
         why.append(f"Quiet accumulation: {rs['verdict']} results, price flat over {', '.join(flat)}, "
                    f"volume {vsurge:.1f}x its 20-day average - big institutions may be buying")
 
+    ords = [i for i in (s.get("orders") or []) if i.get("age_h", 0) <= 24 * 180]
+    flt = [x for x in ((s.get("docs") or {}).get("filings") or []) if re.search(r"order|contract|award|\bLoA\b", x["text"], re.I)]
+    cr_news = sum({round(i["amt_cr"], 1) for i in ords if i.get("amt_cr")})
+    cr_file = sum({round(amt_cr_of(x["text"]), 1) for x in flt if amt_cr_of(x["text"])})
+    ocr = max(cr_news, cr_file)
+    ysales = f.get("y_sales")
+    opct = (ocr / ysales * 100) if (ocr and ysales and ysales > 0) else None
+    ordd = {"n": len(ords) + len(flt), "cr": ocr or None, "pct": opct, "files": flt[:3],
+            "cust": list(dict.fromkeys(n_ for i in ords for n_ in (i.get("cust") or [])))[:4]}
+    if opct is not None:
+        if opct >= 25:
+            score += 4
+            why.append(f"Big order wins: about Rs {ocr:,.0f} Cr announced in 6 months = {opct:.0f}% of annual sales"
+                       + (f" (customers: {', '.join(ordd['cust'])})" if ordd["cust"] else ""))
+        elif opct >= 10:
+            score += 2
+            why.append(f"Order wins of about Rs {ocr:,.0f} Cr in 6 months = {opct:.0f}% of annual sales")
+    if cc.get("certs"):
+        score += 2
+        why.append("Quality approvals mentioned on the concall: " + ", ".join(cc["certs"][:3]))
+    if cc.get("quals"):
+        score += 2
+        why.append("Vendor-qualification / long-term-agreement language on the concall")
+    if (cc.get("top_cust_pct") or 0) >= 40:
+        risks.append(f"Customer concentration: top customers are about {cc['top_cust_pct']}% of sales")
+
     cy = next((c for c in cyc if c["theme"] == s["theme"]), None)
     if cy:
         score += cy["pts"]
@@ -1696,7 +1755,7 @@ def build_view(s, cyc):
         "watch": bool(s.get("watch")), "pledged": f.get("pledged"),
         "adx": adx_, "pdi": pdi_, "mdi": mdi_, "rs_rank": rk, "rs_nifty6m": m.get("rs_nifty6m"),
         "margin": mg, "cogs": cg, "accum": accum_info, "ret2d": m.get("ret2d"), "ret5d": m.get("ret5d"),
-        "call": call, "areas": s.get("areas", []), "mb": mb, "insider": s.get("insider") or [], "cagr": f.get("cagr"),
+        "call": call, "areas": s.get("areas", []), "mb": mb, "ord": ordd, "insider": s.get("insider") or [], "cagr": f.get("cagr"),
         "targets": [x["area"] for x in cc.get("targets", [])], "about": (s.get("about") or "")[:420],
         "customers": customers, "orders": s.get("orders", []),
         "links": {"screener": s["url"], "chart": f"https://in.tradingview.com/chart/?symbol=NSE%3A{sym}",
@@ -1734,6 +1793,12 @@ def do_alerts(views, data):
         if v["mb"]["call"] == "MULTIBAGGER BUY" and k not in done:
             msgs.append(f"MULTIBAGGER BUY: {v['name']} ({v['theme']})\nMulti-bagger score {v['mb']['score']}/100. "
                         + "; ".join(v["mb"]["why"][:3]) + f"\n{v['links']['screener']}")
+            done.add(k)
+        o_ = v.get("ord") or {}
+        k = f"{v['sym']}|ord|{int(o_.get('cr') or 0)}"
+        if o_.get("pct") and o_["pct"] >= 25 and (v.get("mcap") or 1e9) < 5000 and v["verdict"] != "Avoid" and k not in done:
+            msgs.append(f"BIG ORDERS: {v['name']} announced about Rs {o_['cr']:,.0f} Cr of orders = {o_['pct']:.0f}% of annual sales"
+                        + (f" (customers: {', '.join(o_['cust'])})" if o_.get("cust") else "") + f"\n{v['links']['screener']}")
             done.add(k)
         if v["verdict"] == "Avoid":
             continue
@@ -2096,7 +2161,8 @@ def render(raw, state, alerts=True):
                 "mg": (v["margin"] or {}).get("verdict", ""), "ad": v["adx"], "rs": v["rs_rank"],
                 "mb": v["mb"]["score"], "mbc": v["mb"]["call"], "pu": v["mb"]["pu"], "ph": v["mb"]["ph"],
                 "ib": 1 if v["mb"]["insider_buy"] else 0, "pg": v["mb"]["p3"],
-                "vr": round(v["vol_ratio"], 1) if v.get("vol_ratio") else None} for v in views]
+                "vr": round(v["vol_ratio"], 1) if v.get("vol_ratio") else None,
+                "oc": v["ord"]["cr"], "op": v["ord"]["pct"], "on": v["ord"]["n"], "ou": v["ord"]["cust"][:3]} for v in views]
 
     quiet = sorted([{"sym": v["sym"], "name": v["name"], "call": v["call"], "score": v["score"],
                      "rv": (v["results"] or {}).get("verdict", ""), "flat": v["accum"]["flat"], "vol": v["accum"]["vol"],
@@ -2232,8 +2298,13 @@ def demo_data():
             s["concall"]["focus"] = ["We are targeting new customers in the data centre cooling segment next year."]
             s["concall"]["customers"] = [{"name": "Vertiv", "region": "Global", "n": 2, "src": "concall", "link": "",
                                           "ctx": "We received a repeat order from Vertiv for cooling assemblies."}]
-        s["orders"] = ([{"title": f"{s['name']} bags order from Safran", "link": "https://example.com", "src": "Demo Wire",
-                         "ago": "5d ago", "age_h": 120, "cust": ["Safran"]}] if i % 3 == 0 else [])
+        s["orders"] = ([{"title": f"{s['name']} bags Rs 320 crore order from Safran", "link": "https://example.com", "src": "Demo Wire",
+                         "ago": "5d ago", "age_h": 120, "cust": ["Safran"], "amt_cr": 320.0}] if i % 3 == 0 else [])
+        if i % 2 == 0:
+            s["f"]["mcap"] = 1200 + i * 90
+        if s.get("concall"):
+            s["concall"].update(certs=["AS9100", "NADCAP"] if i % 2 == 0 else [], quals=["We are a qualified single-source supplier under a long-term agreement."] if i % 3 == 0 else [],
+                                top_cust_pct=45 if i == 3 else None, v=3)
         for b in s.get("broker", []):
             b.update(who=["Kotak"], target=1500, call="Buy")
     pol = {"themes": {}, "newsletters": [{"title": "Demo newsletter: why T&D capex is accelerating", "link": "https://example.com",
@@ -2300,7 +2371,7 @@ const D=__DATA__;
 const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sg=(x,d=1)=>x==null?'-':(x>0?'+':'')+Number(x).toFixed(d)+'%';
 const vcls=v=>v==='Bullish'?'g':v==='Watch'?'a':'r';
-const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['mb','Multibagger'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
+const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['mb','Multibagger'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
 let tab='picks',q='',th='';
 document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'')+(D.coverage&&D.coverage.universe?'  |  Coverage: '+D.coverage.loaded+' of '+D.coverage.universe+' listed stocks loaded'+(D.coverage.note?' ('+D.coverage.note+')':''):'');
 const M=D.market||{};
@@ -2314,7 +2385,7 @@ function card(s){
  const nw=s.news.slice(0,3).map(n=>'<a class="nw '+(n.s>0?'p':n.s<0?'n':'')+'" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a>').join('');
  return '<div class="card"><div class="row"><div><div class="name">'+esc(s.name)+'</div><div class="theme">'+esc(s.theme)+' | Tier '+esc(s.tier)+' ('+s.flags+'/5 rules)</div></div>'+
  '<div><div class="score '+vc+'">'+s.score+'<small>/100</small></div></div></div>'+
- '<div style="margin-top:6px"><span class="badge '+vc+'">'+esc(s.call||s.verdict)+'</span></div>'+rline(s)+mline(s)+mbBlock(s)+
+ '<div style="margin-top:6px"><span class="badge '+vc+'">'+esc(s.call||s.verdict)+'</span></div>'+rline(s)+mline(s)+mbBlock(s)+ordBlock(s)+
  '<div class="kv"><div><span>Price</span> '+(s.price?'Rs '+s.price.toFixed(1):'-')+' <b class="'+(s.day>0?'g':'r')+'">'+sg(s.day)+'</b></div>'+
  '<div><span>Volume</span> <b class="'+(s.vol_ratio>=1.5?'g':'')+'">'+(s.vol_ratio?s.vol_ratio.toFixed(1)+'x avg':'-')+'</b></div>'+
  '<div><span>Liquidity</span> '+(s.turnover_cr!=null?'Rs '+s.turnover_cr.toFixed(1)+' Cr/day':'-')+'</div>'+
@@ -2365,6 +2436,22 @@ function policyTab(){
 const wcv=(a,b)=>a==null||b==null?'-':'<b class="'+(b>a*1.03+0.5?'r':'g')+'">'+Math.round(a)+' to '+Math.round(b)+'</b>';
 const ul=a=>a&&a.length?'<ul>'+a.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'';
 const lk=(u,t)=>'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+t+'</a>';
+function ordBlock(s){const o=s.ord,c=s.concall||{};let h='';
+ if(o&&(o.cr||(o.cust||[]).length||(o.files||[]).length)){h+='<div class="sec">Order wins (last 6 months)</div>'+(o.cr?'<div style="font-size:13.5px"><b>Rs '+Math.round(o.cr).toLocaleString('en-IN')+' Cr announced</b>'+(o.pct!=null?' = <b class="'+(o.pct>=25?'g':'')+'">'+Math.round(o.pct)+'% of annual sales</b>':'')+'</div>':'')+((o.cust||[]).length?'<div class="theme">Customers named: '+esc(o.cust.join(', '))+'</div>':'')+(o.files||[]).map(x=>'<a class="nw p" href="'+esc(x.href)+'" target="_blank" rel="noopener"><span class="chip">Exchange filing</span>'+esc(x.text)+'</a>').join('');}
+ if((c.certs||[]).length||(c.quals||[]).length||c.top_cust_pct!=null){h+='<div class="sec">Entry barriers and customer ties (concall)</div>'+((c.certs||[]).length?'<div class="theme">Approvals mentioned: '+esc(c.certs.join(', '))+'</div>':'')+ul(c.quals)+(c.top_cust_pct!=null?'<div class="theme '+(c.top_cust_pct>=40?'r':'')+'">Top customers about '+c.top_cust_pct+'% of sales</div>':'');}
+ return h?'<details><summary>Orders, approvals, customer ties</summary>'+h+'</details>':'';}
+let owCap='SMALL';
+function owTab(){const sel=(v,c)=>v==c?' selected':'';return '<div class="card"><div class="theme">Small and micro companies announcing big orders compared with their own size. The key number is the order value as a share of annual sales: a Rs 300 Cr order for a company with Rs 150 Cr of yearly sales is 200 percent. Amounts come from news headlines and exchange filings in the last 6 months, so verify the order and the customer before acting. Customers are named automatically, for example Safran, Bloom Energy, Apple or the Ministry of Defence.</div></div><select onchange="owCap=this.value;renderOw()"><option value="MICRO"'+sel(owCap,'MICRO')+'>Micro caps (under Rs 500 Cr)</option><option value="SMALL"'+sel(owCap,'SMALL')+'>Small and micro (under Rs 5,000 Cr)</option><option value="ALL"'+sel(owCap,'ALL')+'>All sizes</option></select><div id="owbox"></div>';}
+function renderOw(){
+ const el=document.getElementById('owbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderOw);return;}
+ const lim=owCap==='MICRO'?500:owCap==='SMALL'?5000:1e12,okc=u=>u.c==null||u.c<lim;
+ const big=U.filter(u=>okc(u)&&u.oc&&u.op!=null).sort((a,b)=>b.op-a.op);
+ const named=U.filter(u=>okc(u)&&(u.ou||[]).length&&!(u.oc&&u.op!=null)).sort((a,b)=>b.sc-a.sc);
+ const row=u=>'<div class="card" style="padding:10px;cursor:pointer" onclick="openP(\''+esc(u.s)+'\')"><div class="row"><div><b>'+esc(u.n)+'</b><div class="theme">'+esc(u.t||'')+(u.c?' | Rs '+Math.round(u.c).toLocaleString('en-IN')+' Cr':'')+'</div></div><span class="badge '+ccls(u.v)+'">'+esc(u.v)+'</span></div><div class="kv">'+(u.oc?'<div><span>Orders</span> <b class="g">Rs '+Math.round(u.oc).toLocaleString('en-IN')+' Cr</b></div>':'')+(u.op!=null?'<div><span>Share of annual sales</span> <b class="'+(u.op>=25?'g':'')+'">'+Math.round(u.op)+'%</b></div>':'')+'<div><span>Customers</span> '+esc((u.ou||[]).join(', ')||'-')+'</div><div><span>Quarter</span> '+esc(u.rv||'-')+'</div><div><span>Score</span> '+u.sc+'/100</div></div></div>';
+ el.innerHTML='<div class="stats" style="grid-template-columns:repeat(2,1fr)"><div class="stat"><b class="g">'+big.length+'</b><span>With order size</span></div><div class="stat"><b>'+named.length+'</b><span>Customer named, no amount</span></div></div>'+
+  '<h2 class="g">Orders big compared with company size ('+big.length+')</h2>'+(big.length?big.slice(0,40).map(row).join(''):'<div class="empty">None found yet. This fills in as more stocks are loaded.</div>')+
+  '<h2>Customers named, order size not disclosed ('+named.length+')</h2>'+(named.length?named.slice(0,30).map(row).join(''):'<div class="empty">None found yet.</div>');}
 function deep(s){
  const c=s.concall||{},cr=s.credit||{},bk=s.broker||[],pl=s.pli||[];let h='';
  if(s.ob_text||(c.order_book&&c.order_book.length))h+='<div class="sec">Order book</div>'+(s.ob_text?'<div style="font-size:13.5px"><b>'+esc(s.ob_text)+'</b></div>':'')+ul(c.order_book);
@@ -2542,7 +2629,7 @@ function brokersTab(){
  let h='<div class="card"><div class="theme">Where the big brokerages are building positions or turning positive, grouped by house (Kotak, ICICI Securities, Motilal Oswal, Axis, Nuvama, Jefferies and others). Headlines only, so open the article for the full note.</div></div>';
  h+=hs.map(w=>'<h2>'+esc(w)+' ('+H[w].length+')</h2>'+H[w].slice(0,12).map(n=>'<div class="card" style="padding:10px"><div class="row"><b style="cursor:pointer" onclick="openP(\''+esc(n.sym)+'\')">'+esc(n.name)+'</b><span class="badge '+ccls(n.scall)+'">'+esc(n.scall||'')+'</span></div><a class="nw '+(n.view>0?'p':n.view<0?'n':'')+'" style="border-top:0" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+bchips(n)+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a></div>').join('')).join('');
  return R.length?h:'<div class="empty">No brokerage headlines found yet.</div>';}
-function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,mb:mbTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='mb')renderMb();if(tab==='vol')renderVol();}
+function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,mb:mbTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='mb')renderMb();if(tab==='ow')renderOw();if(tab==='vol')renderVol();}
 nav();draw();
 </script></body></html>
 """
