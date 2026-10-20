@@ -65,6 +65,8 @@ EXTRA_WATCHLIST = []
 FILING_KW = ["receipt of order", "bagging", "bags order", "order worth", "letter of award", "purchase order", "work order",
              "new order", "supply order", "preferential", "warrant", "qip", "rights issue", "allotment", "fund rais", "capital rais", "open offer",
              "stake", "acquisition", "subscription", "buyback", "bulk deal", "block deal"]
+# Company-size bands in Rs Cr of market cap (edit if you prefer other cut-offs). The "By market cap" tab uses these.
+CAP_BANDS = [("Micro cap", 0, 500), ("Small cap", 500, 5000), ("Mid cap", 5000, 20000), ("Large cap", 20000, None)]
 ONLY_THEMES = False   # False = scan ALL sectors (your 5 priority themes are still labelled separately)
 
 # keyword -> matched against Screener industry tags + company name
@@ -2173,7 +2175,7 @@ def render(raw, state, alerts=True):
         "pli": {"schemes": [{k: v_ for k, v_ in p_.items() if k != "kw"} for p_ in PLI_SCHEMES], "news": state.get("pli_news", []),
                 "stocks": [{"name": v["name"], "sym": v["sym"], "theme": v["theme"], "verdict": v["verdict"], "items": v["pli"]}
                            for v in featured if v["pli"]]},
-        "coverage": {"loaded": len(views), "universe": state.get("universe_n"), "note": state.get("scan_note", "")}, "stocks": featured, "accum": quiet, "news": news[:60], "areas": areas, "orders": orders,
+        "coverage": {"loaded": len(views), "universe": state.get("universe_n"), "note": state.get("scan_note", "")}, "caps": [{"name": n_, "lo": lo_, "hi": hi_} for n_, lo_, hi_ in CAP_BANDS], "stocks": featured, "accum": quiet, "news": news[:60], "areas": areas, "orders": orders,
         "big": {"acc": acc, "deals": deals[:60], "prefs": prefs[:60]}, "brokers": brokers[:80],
         "focus_themes": [c["theme"] for c in cyc if c["stance"].startswith("FOCUS")],
         "avoid_themes": [c["theme"] for c in cyc if c["stance"] in ("AVOID", "REDUCE / AVOID")],
@@ -2302,6 +2304,8 @@ def demo_data():
                          "ago": "5d ago", "age_h": 120, "cust": ["Safran"], "amt_cr": 320.0}] if i % 3 == 0 else [])
         if i % 2 == 0:
             s["f"]["mcap"] = 1200 + i * 90
+        if i in (4, 6, 9):
+            s["f"]["mcap"] = 300 + i * 20
         if s.get("concall"):
             s["concall"].update(certs=["AS9100", "NADCAP"] if i % 2 == 0 else [], quals=["We are a qualified single-source supplier under a long-term agreement."] if i % 3 == 0 else [],
                                 top_cust_pct=45 if i == 3 else None, v=3)
@@ -2362,6 +2366,7 @@ input,select{width:100%;padding:9px;border-radius:10px;border:1px solid var(--bd
 .ht{border-collapse:collapse;font-size:12px;width:100%}.ht td,.ht th{padding:4px 7px;border-bottom:1px solid var(--bd);white-space:nowrap;text-align:right}.ht td:first-child,.ht th:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
 .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--bg);border:1px solid var(--bd);margin-right:6px}
 .badge.b{background:#e0ecff;color:#1d4ed8}@media(prefers-color-scheme:dark){.badge.b{background:#14233f;color:#7aa7ff}}
+.segs{display:flex;gap:6px;overflow-x:auto;margin:8px 0}.segs button{flex:none;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 12px;border-radius:20px;font-size:13px}.segs button.on{background:var(--tx);color:var(--bg)}
 .disc{color:var(--mut);font-size:11.5px;margin-top:20px}
 </style></head><body>
 <header><h1>India Moat Screener</h1><div class="sub" id="upd"></div><div id="mood"></div></header>
@@ -2371,7 +2376,7 @@ const D=__DATA__;
 const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sg=(x,d=1)=>x==null?'-':(x>0?'+':'')+Number(x).toFixed(d)+'%';
 const vcls=v=>v==='Bullish'?'g':v==='Watch'?'a':'r';
-const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['mb','Multibagger'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
+const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['cap','Micro / Small / Mid cap'],['mb','Multibagger'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
 let tab='picks',q='',th='';
 document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'')+(D.coverage&&D.coverage.universe?'  |  Coverage: '+D.coverage.loaded+' of '+D.coverage.universe+' listed stocks loaded'+(D.coverage.note?' ('+D.coverage.note+')':''):'');
 const M=D.market||{};
@@ -2436,6 +2441,28 @@ function policyTab(){
 const wcv=(a,b)=>a==null||b==null?'-':'<b class="'+(b>a*1.03+0.5?'r':'g')+'">'+Math.round(a)+' to '+Math.round(b)+'</b>';
 const ul=a=>a&&a.length?'<ul>'+a.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'';
 const lk=(u,t)=>'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+t+'</a>';
+let capSeg=0,capRule='3',capCall='BUYHOLD',capSort='sc';
+function capTab(){return '<div class="card"><div class="theme">Choose a company size, then see which stocks in that group pass our rules. The core rules are record quarterly and annual sales and profit plus a profit breakout (5 of 5 is the strictest). Cost quality, working capital, trend, volume and ownership checks then feed the BUY / HOLD / WAIT / AVOID call. Size bands (editable in the script): '+(D.caps||[]).map(b=>esc(b.name)+' '+(b.hi==null?'above Rs '+b.lo.toLocaleString('en-IN'):'Rs '+b.lo.toLocaleString('en-IN')+' to '+b.hi.toLocaleString('en-IN'))+' Cr').join(' | ')+'.</div></div><div id="capbox"></div>';}
+const capRow=u=>'<div class="card" style="padding:10px;cursor:pointer" onclick="openP(\''+esc(u.s)+'\')"><div class="row"><div><b>'+esc(u.n)+'</b><div class="theme">'+esc(u.t||'')+(u.c?' | Rs '+Math.round(u.c).toLocaleString('en-IN')+' Cr':'')+' | Rules '+(u.tr==='A'?'5/5':u.tr==='B'?'4/5':u.tr==='C'?'3/5':'under 3/5')+'</div></div><div style="text-align:right"><span class="badge '+ccls(u.v)+'">'+esc(u.v)+'</span><div class="score" style="font-size:18px">'+u.sc+'</div></div></div><div class="kv"><div><span>Quarter</span> <b class="'+rcol(u.rv)+'">'+esc(u.rv||'-')+'</b></div><div><span>Profit YoY</span> <b>'+pc(u.py)+'</b></div><div><span>Sales YoY</span> '+pc(u.sy)+'</div><div><span>Cost quality</span> '+esc(u.mg||'-')+'</div><div><span>Rel. strength</span> '+(u.rs==null?'-':u.rs+'/99')+'</div><div><span>ADX</span> '+(u.ad==null?'-':Math.round(u.ad))+'</div><div><span>Volume</span> '+(u.vr?u.vr+'x avg':'-')+'</div><div><span>Multibagger</span> '+esc(u.mbc||'-')+'</div></div></div>';
+function renderCap(){
+ const el=document.getElementById('capbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderCap);return;}
+ const B=D.caps||[],sel=(v,c)=>v==c?' selected':'';
+ const inSeg=(u,b)=>u.c!=null&&u.c>=b.lo&&(b.hi==null||u.c<b.hi);
+ const pass=(u,k)=>k==='ALL'||(k==='5'?u.tr==='A':k==='4'?(u.tr==='A'||u.tr==='B'):u.tr!=='-');
+ const segs=B.map((b,i)=>{const all=U.filter(u=>inSeg(u,b));return {b:b,i:i,n:all.length,rule:all.filter(u=>pass(u,'3')).length,buy:all.filter(u=>u.v==='BUY').length};});
+ const cur=segs[capSeg]||segs[0];
+ if(!cur){el.innerHTML='<div class="empty">No data yet.</div>';return;}
+ const rows=U.filter(u=>inSeg(u,cur.b)&&pass(u,capRule)&&(capCall==='ALL'||(capCall==='BUYHOLD'?(u.v==='BUY'||u.v==='HOLD'):u.v===capCall)));
+ const key={sc:u=>u.sc,py:u=>u.py==null?-999:u.py,rs:u=>u.rs==null?-1:u.rs,vr:u=>u.vr||0,mb:u=>u.mb||0}[capSort]||(u=>u.sc);
+ rows.sort((a,b)=>key(b)-key(a));
+ let h='<div class="segs">'+segs.map(s=>'<button class="'+(s.i===capSeg?'on':'')+'" onclick="capSeg='+s.i+';renderCap()">'+esc(s.b.name)+' ('+s.n+')</button>').join('')+'</div>';
+ h+='<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><b>'+cur.n+'</b><span>Loaded</span></div><div class="stat"><b class="a">'+cur.rule+'</b><span>Pass 3+ of 5 rules</span></div><div class="stat"><b class="g">'+cur.buy+'</b><span>BUY</span></div></div>';
+ h+='<select onchange="capRule=this.value;renderCap()"><option value="5"'+sel(capRule,'5')+'>Rules: 5 of 5 (strictest)</option><option value="4"'+sel(capRule,'4')+'>Rules: 4 or more of 5</option><option value="3"'+sel(capRule,'3')+'>Rules: 3 or more of 5</option><option value="ALL"'+sel(capRule,'ALL')+'>Rules: show all stocks</option></select>';
+ h+='<select onchange="capCall=this.value;renderCap()"><option value="BUYHOLD"'+sel(capCall,'BUYHOLD')+'>Call: BUY and HOLD</option><option value="BUY"'+sel(capCall,'BUY')+'>Call: BUY only</option><option value="WAIT"'+sel(capCall,'WAIT')+'>Call: WAIT</option><option value="AVOID"'+sel(capCall,'AVOID')+'>Call: AVOID</option><option value="ALL"'+sel(capCall,'ALL')+'>Call: all</option></select>';
+ h+='<select onchange="capSort=this.value;renderCap()"><option value="sc"'+sel(capSort,'sc')+'>Sort: overall score</option><option value="py"'+sel(capSort,'py')+'>Sort: profit growth</option><option value="rs"'+sel(capSort,'rs')+'>Sort: relative strength</option><option value="vr"'+sel(capSort,'vr')+'>Sort: volume</option><option value="mb"'+sel(capSort,'mb')+'>Sort: multibagger score</option></select>';
+ h+='<h2>'+esc(cur.b.name)+' stocks ('+rows.length+')</h2>'+(rows.length?rows.slice(0,60).map(capRow).join(''):'<div class="empty">No stock in this size group matches. Loosen the rules or call filter. This fills in as more stocks load.</div>');
+ el.innerHTML=h;}
 function ordBlock(s){const o=s.ord,c=s.concall||{};let h='';
  if(o&&(o.cr||(o.cust||[]).length||(o.files||[]).length)){h+='<div class="sec">Order wins (last 6 months)</div>'+(o.cr?'<div style="font-size:13.5px"><b>Rs '+Math.round(o.cr).toLocaleString('en-IN')+' Cr announced</b>'+(o.pct!=null?' = <b class="'+(o.pct>=25?'g':'')+'">'+Math.round(o.pct)+'% of annual sales</b>':'')+'</div>':'')+((o.cust||[]).length?'<div class="theme">Customers named: '+esc(o.cust.join(', '))+'</div>':'')+(o.files||[]).map(x=>'<a class="nw p" href="'+esc(x.href)+'" target="_blank" rel="noopener"><span class="chip">Exchange filing</span>'+esc(x.text)+'</a>').join('');}
  if((c.certs||[]).length||(c.quals||[]).length||c.top_cust_pct!=null){h+='<div class="sec">Entry barriers and customer ties (concall)</div>'+((c.certs||[]).length?'<div class="theme">Approvals mentioned: '+esc(c.certs.join(', '))+'</div>':'')+ul(c.quals)+(c.top_cust_pct!=null?'<div class="theme '+(c.top_cust_pct>=40?'r':'')+'">Top customers about '+c.top_cust_pct+'% of sales</div>':'');}
@@ -2629,7 +2656,7 @@ function brokersTab(){
  let h='<div class="card"><div class="theme">Where the big brokerages are building positions or turning positive, grouped by house (Kotak, ICICI Securities, Motilal Oswal, Axis, Nuvama, Jefferies and others). Headlines only, so open the article for the full note.</div></div>';
  h+=hs.map(w=>'<h2>'+esc(w)+' ('+H[w].length+')</h2>'+H[w].slice(0,12).map(n=>'<div class="card" style="padding:10px"><div class="row"><b style="cursor:pointer" onclick="openP(\''+esc(n.sym)+'\')">'+esc(n.name)+'</b><span class="badge '+ccls(n.scall)+'">'+esc(n.scall||'')+'</span></div><a class="nw '+(n.view>0?'p':n.view<0?'n':'')+'" style="border-top:0" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+bchips(n)+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a></div>').join('')).join('');
  return R.length?h:'<div class="empty">No brokerage headlines found yet.</div>';}
-function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,mb:mbTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='mb')renderMb();if(tab==='ow')renderOw();if(tab==='vol')renderVol();}
+function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,cap:capTab,mb:mbTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='cap')renderCap();if(tab==='mb')renderMb();if(tab==='ow')renderOw();if(tab==='vol')renderVol();}
 nav();draw();
 </script></body></html>
 """
