@@ -72,6 +72,64 @@ FUTURE_AREAS = ["Semiconductors", "Electronics & EMS", "Data centers & cooling",
                 "Solar & renewables", "Green hydrogen & fuel cells", "Nuclear", "Space", "Drones & unmanned systems",
                 "Advanced materials & critical minerals", "Telecom, 5G & fibre", "Medical devices & biotech", "Defence", "Aerospace",
                 "Industrial automation & capital goods"]
+# Supply-chain chokepoints (my own judgement - edit freely). The "Bottlenecks" tab shows each one with live shortage headlines
+# and your loaded stocks that work in the listed areas (names must match AREAS keys).
+BOTTLENECKS = [
+    {"id": "grid", "title": "Power grid: solar can generate, but storage and the wires cannot keep up",
+     "chain": "Solar and wind  >  battery storage (BESS)  >  transmission lines  >  substations  >  transformers and switchgear  >  distribution and smart meters",
+     "why": "Renewable capacity is being added faster than the grid can carry or store it. Without batteries, pumped storage, new lines, substations and transformers, clean power gets wasted. Delivery lead times for grid equipment have stretched, which gives suppliers with spare capacity pricing power.",
+     "look": "Order backlog above 1.5x sales, capacity expansion, lead-time commentary, rising margins.",
+     "areas": ["Transmission, transformers & T&D", "Solar & renewables", "EV & batteries"],
+     "queries": ["India grid transmission bottleneck renewable curtailment", "battery energy storage BESS tender India", "transformer shortage lead time India"]},
+    {"id": "minerals", "title": "Tungsten, rare earths and other minerals China has restricted",
+     "chain": "Mines and concentrate  >  refining (tungsten powder, carbide, antimony, gallium, germanium)  >  alloys and magnets  >  defence, aerospace tooling, EV motors, electronics",
+     "why": "China dominates the processing of tungsten, antimony, gallium, germanium, graphite and rare earths, and has put export controls on several of them. India has little domestic refining, so tungsten powder and carbide, magnets and similar inputs are strategic for defence and industry. Anyone with qualified domestic capacity can gain pricing power and government support.",
+     "look": "Approvals from defence or aerospace customers, new refining or powder capacity, long-term supply agreements, government schemes.",
+     "areas": ["Advanced materials & critical minerals", "Mining & minerals", "Defence", "Ammunition & explosives"],
+     "queries": ["China export controls tungsten India", "rare earth magnets India supply China restrictions", "critical minerals India refining tungsten antimony gallium"]},
+    {"id": "energetics", "title": "Defence ammunition and energetics: shells, propellants, explosives",
+     "chain": "Chemical inputs  >  propellants and explosives  >  shells and fuzes  >  filling and assembly  >  Army, Navy, Air Force and exports",
+     "why": "Ammunition stockpiles are being rebuilt worldwide, and India is cutting imports and growing exports. Licences, safety approvals and chemical inputs keep new entrants out, so approved makers have long order visibility.",
+     "look": "Export orders, Ministry of Defence contracts, capacity additions, working-capital days.",
+     "areas": ["Ammunition & explosives", "Defence", "Specialty chemicals"],
+     "queries": ["ammunition shortage artillery shells production", "India ammunition export order", "defence propellant explosives capacity India"]},
+    {"id": "aero", "title": "Aerospace castings, forgings and engine parts",
+     "chain": "Raw alloys  >  castings and forgings  >  precision machining  >  engine and airframe assemblies  >  Boeing, Airbus, engine makers",
+     "why": "Aircraft and engine makers have long backlogs and struggle to get castings, forgings and machined parts on time. Indian suppliers that hold quality approvals (AS9100, NADCAP) win repeat, multi-year orders.",
+     "look": "Named global customers, long-term agreements, certifications, customer concentration.",
+     "areas": ["Aerospace", "Precision engineering & components", "Space"],
+     "queries": ["aerospace supply chain castings forgings shortage", "Boeing Airbus supplier delays engine parts", "India aerospace components export order"]},
+    {"id": "electronics", "title": "Electronics and semiconductors: components and local supply",
+     "chain": "Chips and passives  >  PCBs, connectors, camera and display modules  >  phone and device assembly  >  exports",
+     "why": "Phone and electronics makers want a second source outside China. India is short of local PCBs, passive components, connectors, modules and chip packaging, so approved component makers and EMS firms are in demand, helped by PLI and the component scheme.",
+     "look": "Customer approvals (Apple, Samsung and their vendors), PLI or scheme approvals, utilisation, working capital.",
+     "areas": ["Electronics & EMS", "Semiconductors", "Telecom, 5G & fibre"],
+     "queries": ["India electronics component manufacturing scheme approval", "semiconductor supply chain shortage components", "Apple Foxconn India component suppliers"]},
+    {"id": "datacentre", "title": "Data centres: power, cooling and electrical equipment",
+     "chain": "Grid connection  >  transformers and switchgear  >  UPS and backup  >  cooling  >  servers and racks",
+     "why": "AI data centres need huge amounts of power, cooling and backup. Transformers, switchgear, cables, UPS and chillers are short, and grid connections take years.",
+     "look": "Data-centre order inflow, cooling and power-gear capacity, customer names.",
+     "areas": ["Data centers & cooling", "Transmission, transformers & T&D", "Robotics & AI hardware"],
+     "queries": ["data centre power shortage India", "AI data center cooling demand transformers switchgear shortage", "India data centre capacity expansion order"]},
+    {"id": "nuclear", "title": "Nuclear: heavy forgings, fuel and very few approved vendors",
+     "chain": "Fuel and heavy water  >  reactor-grade forgings  >  steam generators and pressure parts  >  plant build  >  grid",
+     "why": "India plans a large nuclear expansion and is opening the sector to more players. Reactor-grade forgings and precision parts have very few qualified vendors, and approvals take years, so qualified suppliers have a strong moat.",
+     "look": "Approved-vendor status, orders from the nuclear power operator and its partners, capacity for heavy machining.",
+     "areas": ["Nuclear", "Precision engineering & components"],
+     "queries": ["India nuclear power expansion orders vendors", "NPCIL order heavy forgings equipment", "small modular reactor India private sector"]},
+    {"id": "copper", "title": "Copper, aluminium and cable inputs",
+     "chain": "Mines  >  smelting and refining  >  wire, cable and busbar  >  grid, EV and data-centre build-outs",
+     "why": "Grid, EV and data-centre build-outs use huge amounts of copper and aluminium while mine supply is tight. Producers and cable makers that can pass on costs benefit.",
+     "look": "Cost pass-through, order books, capacity additions.",
+     "areas": ["Mining & minerals", "Transmission, transformers & T&D"],
+     "queries": ["copper shortage price record grid demand", "India copper smelter capacity expansion", "cable makers copper cost pass through India"]},
+    {"id": "shipbuilding", "title": "Shipbuilding and marine: global yard capacity shortage",
+     "chain": "Steel and engines  >  shipyards  >  naval and commercial ships  >  repair and ports",
+     "why": "Yard capacity is short worldwide, order books run for years, and India offers incentives to build ships at home. Naval work adds steady defence demand.",
+     "look": "Order book in years of sales, naval versus commercial mix, margins.",
+     "areas": ["Shipbuilding & marine", "Defence"],
+     "queries": ["global shipbuilding capacity shortage order backlog", "India shipyard order naval commercial", "India shipbuilding scheme incentive"]},
+]
 ONLY_THEMES = False   # False = scan ALL sectors (your 5 priority themes are still labelled separately)
 
 # keyword -> matched against Screener industry tags + company name
@@ -737,6 +795,28 @@ def margin_view(rows):
     return {"verdict": verdict, "cost_now": c_now, "cost_yr": c_yr, "cost_q": c_q, "opm": o_now, "opm_yr": o_yr, "opm_q": o_q,
             "op_yoy": op_yoy, "op_qoq": op_qoq, "op_record": op_rec, "cost_fall": cost_fall, "opm_up": opm_up, "pts": pts}
 
+def fetch_pm(html, url):
+    """Plant & machinery growth from Screener's fixed-asset schedule. Best effort: returns {} if unavailable."""
+    try:
+        info = BeautifulSoup(html, "html.parser").find(id="company-info")
+        wid = (info.get("data-warehouse-id") or info.get("data-company-id")) if info else None
+        if not wid:
+            return {}
+        params = {"parent": "Fixed Assets", "section": "balance-sheet"}
+        if "/consolidated/" in url:
+            params["consolidated"] = ""
+        r = S.get(f"{BASE}/api/company/{wid}/schedules/", params=params, timeout=20)
+        if r.status_code != 200:
+            return {}
+        for k, v in r.json().items():
+            if "plant" in k.lower() and isinstance(v, dict):
+                vals = [num(str(x)) for x in v.values()]
+                if len(vals) >= 2 and vals[-1] is not None and vals[-2] and vals[-2] > 0:
+                    return {"pm_now": vals[-1], "pm_prev": vals[-2], "pm_yoy": (vals[-1] / vals[-2] - 1) * 100}
+    except Exception:
+        pass
+    return {}
+
 def fetch_cogs(html, url):
     """Material cost % (true COGS) from Screener's schedule data. Best effort: returns None if unavailable."""
     try:
@@ -816,6 +896,28 @@ def parse_company(html, row):
             f["de"] = br_[-1] / (eq_[-1] + rv_[-1])
     except Exception:
         pass
+    try:
+        bs2 = grab_table(soup, "balance-sheet")[1]
+        cf2 = grab_table(soup, "cash-flow")[1]
+        fa, cw = bs2.get("fixed assets") or [], bs2.get("cwip") or []
+        cfo2, cfi2 = cf2.get("cash from operating activity") or [], cf2.get("cash from investing activity") or []
+        cx = {}
+        if len(fa) >= 2 and fa[-1] is not None and fa[-2] and fa[-2] > 0:
+            cx["fa_yoy"] = (fa[-1] / fa[-2] - 1) * 100
+        if len(fa) >= 4 and fa[-1] and fa[-4] and fa[-4] > 0 and fa[-1] > 0:
+            cx["fa_cagr3"] = ((fa[-1] / fa[-4]) ** (1 / 3) - 1) * 100
+        if cw and cw[-1] is not None and fa and fa[-1]:
+            cx["cwip"] = cw[-1]
+            cx["cwip_pct"] = cw[-1] / fa[-1] * 100
+        if len(cfo2) >= 2 and None not in (cfo2[-1], cfo2[-2]):
+            cx["cfo_now"], cx["cfo_prev"] = cfo2[-1], cfo2[-2]
+            if cfo2[-2] > 0:
+                cx["cfo_yoy"] = (cfo2[-1] / cfo2[-2] - 1) * 100
+        if cfi2 and cfi2[-1] is not None:
+            cx["cfi_now"] = cfi2[-1]
+        f["capex"] = cx
+    except Exception:
+        f["capex"] = {}
     qh, qrows = grab_table(soup, "quarters")
     f["results"] = results_view(qh, qrows)
     f["margin"] = margin_view(qrows)
@@ -1229,6 +1331,30 @@ def prio_of(s):
     if fl == 3 or (f.get("results") or {}).get("verdict") == "Excellent":
         return 1
     return 0
+
+def bottleneck_scan():
+    """Live shortage / export-curb / lead-time headlines for each chokepoint in BOTTLENECKS."""
+    alarm = ["shortage", "ban", "curb", "restriction", "export control", "lead time", "backlog", "bottleneck", "supply crunch",
+             "tight", "constraint", "scarcity", "crunch", "delay", "sanction"]
+    out = {}
+    for b in BOTTLENECKS:
+        items, seen = [], set()
+        for q in b["queries"]:
+            r = get("https://news.google.com/rss/search", params={"q": q + " when:30d", "hl": "en-IN", "gl": "IN", "ceid": "IN:en"})
+            if r is not None:
+                for it in feed_items(r.content, 10):
+                    key = it["title"].lower()[:70]
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    it["alarm"] = any(w in it["title"].lower() for w in alarm)
+                    items.append(it)
+            time.sleep(0.5)
+        n_alarm = sum(1 for i in items if i["alarm"])
+        items.sort(key=lambda i: (not i["alarm"], i["age_h"]))
+        out[b["id"]] = {"news": items[:8], "alarm": n_alarm, "heat": "High" if n_alarm >= 6 else "Medium" if n_alarm >= 3 else "Low"}
+    print("bottlenecks:", {k: v["heat"] for k, v in out.items()})
+    return out
 
 def pli_scan():
     out, seen = [], set()
@@ -1754,6 +1880,21 @@ def build_view(s, cyc):
         elif de_ > 1.5:
             score -= 4
             risks.append(f"High debt (debt to equity {de_:.1f})")
+    cx = f.get("capex") or {}
+    ath4 = bool(f.get("ath_q_sales") and f.get("ath_q_profit") and f.get("ath_y_sales") and f.get("ath_y_profit"))
+    athq = bool(f.get("ath_q_sales") and f.get("ath_q_profit"))
+    hi52_, pr52_ = m.get("hi52"), m.get("price")
+    dd = ((hi52_ - pr52_) / hi52_ * 100) if (hi52_ and pr52_ and hi52_ > 0) else None
+    pn_, py_ = (rs or {}).get("profit"), (rs or {}).get("profit_yoy")
+    pa_ = (pn_ / (1 + py_ / 100)) if (pn_ is not None and py_ is not None and py_ > -99) else None
+    expanding = bool(athq and (cx.get("fa_yoy") or -99) >= 15 and (cx.get("cfo_now") or 0) > 0
+                     and (cx.get("cfo_yoy") is None or cx["cfo_yoy"] > 0))
+    if expanding:
+        score += 3
+        why.append(f"Capacity expanding with record results: fixed assets {cx['fa_yoy']:+.0f}% in a year"
+                   + (f", plant and machinery {cx['pm_yoy']:+.0f}%" if cx.get("pm_yoy") is not None else "")
+                   + (f", work in progress {cx['cwip_pct']:.0f}% of fixed assets" if cx.get("cwip_pct") else "")
+                   + (f", operating cash flow {cx['cfo_yoy']:+.0f}%" if cx.get("cfo_yoy") is not None else ""))
     ords = [i for i in (s.get("orders") or []) if i.get("age_h", 0) <= 24 * 180]
     flt = [x for x in ((s.get("docs") or {}).get("filings") or []) if re.search(r"order|contract|award|\bLoA\b", x["text"], re.I)]
     cr_news = sum({round(i["amt_cr"], 1) for i in ords if i.get("amt_cr")})
@@ -1884,7 +2025,8 @@ def build_view(s, cyc):
         "watch": bool(s.get("watch")), "pledged": f.get("pledged"),
         "adx": adx_, "pdi": pdi_, "mdi": mdi_, "rs_rank": rk, "rs_nifty6m": m.get("rs_nifty6m"),
         "margin": mg, "cogs": cg, "accum": accum_info, "ret2d": m.get("ret2d"), "ret5d": m.get("ret5d"),
-        "call": call, "areas": s.get("areas", []), "mb": mb, "ord": ordd, "triggers": trg, "tscore": tscore, "cfo_ratio": cfo_r, "de": de_, "insider": s.get("insider") or [], "cagr": f.get("cagr"),
+        "call": call, "areas": s.get("areas", []), "mb": mb, "ord": ordd, "triggers": trg, "tscore": tscore, "cfo_ratio": cfo_r, "de": de_,
+        "ath4": ath4, "athq": athq, "dd": dd, "capex": cx, "expanding": expanding, "pn": pn_, "pa": pa_, "insider": s.get("insider") or [], "cagr": f.get("cagr"),
         "targets": [x["area"] for x in cc.get("targets", [])], "about": (s.get("about") or "")[:420],
         "customers": customers, "orders": s.get("orders", []),
         "links": {"screener": s["url"], "chart": f"https://in.tradingview.com/chart/?symbol=NSE%3A{sym}",
@@ -2134,6 +2276,10 @@ def full_scan():
         if short_flags(s) >= 3 or s.get("watch"):
             s["f"]["cogs"] = fetch_cogs(html, r_["url"])
             time.sleep(0.6)
+            pmx = fetch_pm(html, r_["url"])
+            if pmx:
+                s["f"].setdefault("capex", {}).update(pmx)
+            time.sleep(0.6)
         o = raw.get(sym, {})
         for k in KEEP_KEYS:
             if k in o:
@@ -2207,6 +2353,7 @@ def full_scan():
     extra = sorted({s["sector"] for s in raw.values() if not s.get("areas") and s.get("sector")})[:POLICY_EXTRA_MAX]
     state["policy"] = policy_scan(extra)
     state["pli_news"] = pli_scan()
+    state["bottlenecks"] = bottleneck_scan()
     state["watch"] = watch
     state["universe_n"] = len(by_sym)
     state["scan_note"] = scan_note
@@ -2298,9 +2445,32 @@ def render(raw, state, alerts=True):
                 "ib": 1 if v["mb"]["insider_buy"] else 0, "pg": v["mb"]["p3"],
                 "vr": round(v["vol_ratio"], 1) if v.get("vol_ratio") else None,
                 "oc": v["ord"]["cr"], "op": v["ord"]["pct"], "on": v["ord"]["n"], "ou": v["ord"]["cust"][:3],
+                "a4": 1 if v["ath4"] else 0, "aq": 1 if v["athq"] else 0,
+                "dd": round(v["dd"], 1) if v["dd"] is not None else None,
+                "pn": round(v["pn"], 1) if v["pn"] is not None else None, "pa": round(v["pa"], 1) if v["pa"] is not None else None,
+                "fy": round(v["capex"]["fa_yoy"], 1) if v["capex"].get("fa_yoy") is not None else None,
+                "pm": round(v["capex"]["pm_yoy"], 1) if v["capex"].get("pm_yoy") is not None else None,
+                "cw": round(v["capex"]["cwip_pct"], 1) if v["capex"].get("cwip_pct") is not None else None,
+                "cf": round(v["capex"]["cfo_yoy"], 1) if v["capex"].get("cfo_yoy") is not None else None,
+                "co": round(v["capex"]["cfo_now"], 1) if v["capex"].get("cfo_now") is not None else None,
+                "ex": 1 if v["expanding"] else 0,
                 "tc": v["tscore"], "tk": sorted({x["k"] for x in v["triggers"]}),
                 "tl": [x["t"][:70] for x in sorted(v["triggers"], key=lambda x: -x["w"])][:3]} for v in views]
 
+    btl = state.get("bottlenecks") or {}
+    if demo and not btl:
+        btl = {b["id"]: {"news": [{"title": f"Demo headline: supply of {b['title'].split(':')[0].lower()} stays tight, lead times stretch",
+                                   "link": "https://example.com", "src": "Demo Wire", "ago": "2d ago", "age_h": 48, "alarm": True}],
+                         "alarm": 4, "heat": ["High", "Medium", "Low"][j % 3]} for j, b in enumerate(BOTTLENECKS)}
+    bt_out = []
+    for b in BOTTLENECKS:
+        d_ = btl.get(b["id"], {})
+        ben = [v for v in views if (set(v["areas"]) & set(b["areas"])) or (set(v.get("targets") or []) & set(b["areas"]))]
+        ben.sort(key=lambda v: (v["tier"] == "-", -v["score"]))
+        bt_out.append({"id": b["id"], "title": b["title"], "chain": b["chain"], "why": b["why"], "look": b["look"], "areas": b["areas"],
+                       "heat": d_.get("heat", "n/a"), "alarm": d_.get("alarm", 0), "news": d_.get("news", []), "n": len(ben),
+                       "stocks": [{"s": v["sym"], "n": v["name"], "call": v["call"], "sc": v["score"], "c": v["mcap"], "tr": v["tier"],
+                                   "rv": (v["results"] or {}).get("verdict", ""), "mbc": v["mb"]["call"]} for v in ben[:10]]})
     log = state.setdefault("log", {})
     today_s = now_ist().strftime("%Y-%m-%d")
     if demo and not log:
@@ -2344,6 +2514,7 @@ def render(raw, state, alerts=True):
                 "stocks": [{"name": v["name"], "sym": v["sym"], "theme": v["theme"], "verdict": v["verdict"], "items": v["pli"]}
                            for v in featured if v["pli"]]},
         "coverage": {"loaded": len(views), "universe": state.get("universe_n"), "note": state.get("scan_note", "")}, "caps": [{"name": n_, "lo": lo_, "hi": hi_} for n_, lo_, hi_ in CAP_BANDS], "track": track,
+        "bottlenecks": bt_out,
         "future": [{"name": n_, "drivers": AREAS[n_]["drivers"], "risks": AREAS[n_]["risks"]} for n_ in FUTURE_AREAS if n_ in AREAS],
         "stocks": featured, "accum": quiet, "news": news[:60], "areas": areas, "orders": orders,
         "big": {"acc": acc, "deals": deals[:60], "prefs": prefs[:60]}, "brokers": brokers[:80],
@@ -2440,7 +2611,9 @@ def demo_data():
         s["f"]["cogs"] = {"now": 52, "yr": 56, "q": 53} if i % 2 == 0 else None
         if i in (0, 3):
             s["f"]["results"]["verdict"] = "Excellent"
-            s["f"]["results"].update(profit_yoy=45.0, sales_yoy=28.0)
+            s["f"]["results"].update(profit_yoy=95.0 if i == 0 else 78.0, sales_yoy=28.0)
+            if i == 3:
+                s["m"]["hi52"] = s["m"]["price"] / 0.62
             s["m"].update(ret2d=0.4, ret5d=1.1, ret1m=3.0, vol_ratio=1.9, vol_max3=2.2, dma200=s["m"]["price"] * 0.9)
         up = 1 if i % 3 != 2 else -1
         s["f"]["cagr"] = {"sales3": random.uniform(8, 35), "sales5": 15, "profit3": random.uniform(10, 45), "profit5": 20}
@@ -2478,6 +2651,8 @@ def demo_data():
             s["f"]["mcap"] = 300 + i * 20
         s["areas"] = list(dict.fromkeys((s.get("areas") or []) + [FUTURE_AREAS[i % len(FUTURE_AREAS)], FUTURE_AREAS[(i + 5) % len(FUTURE_AREAS)]]))
         s["f"]["cfo_ratio"] = random.choice([0.95, 1.1, 0.3])
+        s["f"]["capex"] = {"fa_yoy": random.uniform(-5, 45), "pm_yoy": random.uniform(0, 50), "cwip_pct": random.uniform(2, 35),
+                           "cfo_now": random.uniform(40, 300), "cfo_yoy": random.uniform(-10, 50), "cfo_prev": 100}
         s["f"]["de"] = random.choice([0.1, 0.4, 1.8])
         if s.get("concall"):
             s["concall"].update(certs=["AS9100", "NADCAP"] if i % 2 == 0 else [], quals=["We are a qualified single-source supplier under a long-term agreement."] if i % 3 == 0 else [],
@@ -2549,7 +2724,7 @@ const D=__DATA__;
 const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sg=(x,d=1)=>x==null?'-':(x>0?'+':'')+Number(x).toFixed(d)+'%';
 const vcls=v=>v==='Bullish'?'g':v==='Watch'?'a':'r';
-const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['cap','Micro / Small / Mid cap'],['mb','Multibagger'],['future','Future tech'],['trig','Triggers'],['track','Track record'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
+const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['cap','Micro / Small / Mid cap'],['dbl','Profit doubled'],['disc','Records at discount'],['exp','Capacity expansion'],['btl','Bottlenecks'],['mb','Multibagger'],['future','Future tech'],['trig','Triggers'],['track','Track record'],['vol','Volume surge'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
 let tab='picks',q='',th='';
 document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'')+(D.coverage&&D.coverage.universe?'  |  Coverage: '+D.coverage.loaded+' of '+D.coverage.universe+' listed stocks loaded'+(D.coverage.note?' ('+D.coverage.note+')':''):'');
 const M=D.market||{};
@@ -2614,6 +2789,54 @@ function policyTab(){
 const wcv=(a,b)=>a==null||b==null?'-':'<b class="'+(b>a*1.03+0.5?'r':'g')+'">'+Math.round(a)+' to '+Math.round(b)+'</b>';
 const ul=a=>a&&a.length?'<ul>'+a.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'';
 const lk=(u,t)=>'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+t+'</a>';
+const selH=(opts,cur,fn)=>'<select onchange="'+fn+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(String(o[0])===String(cur)?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+const CALLS=[['NOAVOID','Call: hide AVOID'],['BUYHOLD','Call: BUY and HOLD'],['BUY','Call: BUY only'],['ALL','Call: all']];
+const RECS=[['A4','Records: quarterly and annual sales and profit'],['Q','Records: quarterly sales and profit'],['ANY','Records: not required']];
+const callOkG=(c,u)=>c==='ALL'||(c==='NOAVOID'?u.v!=='AVOID':c==='BUYHOLD'?(u.v==='BUY'||u.v==='HOLD'):u.v===c);
+const athOkG=(m,u)=>m==='A4'?!!u.a4:m==='Q'?!!u.aq:true;
+const crf=n=>n==null?'-':(Math.abs(n)<100?n.toFixed(1):Math.round(n).toLocaleString('en-IN'));
+const athTag=u=>u.a4?'<span class="chip g">All 4 records</span>':u.aq?'<span class="chip">Quarter records</span>':'';
+function recRow(u,mode){
+ const x=(u.pn!=null&&u.pa>0)?u.pn/u.pa:null;
+ let kv='<div><span>Quarter profit</span> <b>'+(u.pa!=null&&u.pn!=null?'Rs '+crf(u.pa)+' Cr to Rs '+crf(u.pn)+' Cr':'-')+'</b>'+(x?' <b class="g">('+x.toFixed(1)+'x)</b>':'')+'</div><div><span>Sales YoY</span> '+pc(u.sy)+'</div>';
+ if(mode==='disc')kv+='<div><span>Below 52-week high</span> <b class="a">'+(u.dd==null?'-':Math.round(u.dd)+'%')+'</b></div><div><span>Price</span> '+(u.p==null?'-':'Rs '+u.p)+'</div>';
+ if(mode==='exp')kv+='<div><span>Fixed assets</span> <b>'+pc(u.fy)+'</b></div><div><span>Plant and machinery</span> '+(u.pm==null?'n/a':pc(u.pm))+'</div><div><span>Work in progress</span> '+(u.cw==null?'-':Math.round(u.cw)+'% of fixed assets')+'</div><div><span>Operating cash flow</span> '+(u.co==null?'-':'Rs '+crf(u.co)+' Cr')+' <b class="'+((u.cf||0)>0?'g':'r')+'">'+pc(u.cf)+'</b></div>';
+ kv+='<div><span>Quarter</span> '+esc(u.rv||'-')+'</div><div><span>Score</span> '+u.sc+'/100</div>';
+ return '<div class="card" style="padding:10px;cursor:pointer" onclick="openP(\''+esc(u.s)+'\')"><div class="row"><div><b>'+esc(u.n)+'</b><div class="theme">'+esc(u.t||'')+(u.c?' | Rs '+Math.round(u.c).toLocaleString('en-IN')+' Cr':'')+'</div>'+athTag(u)+'</div><span class="badge '+ccls(u.v)+'">'+esc(u.v)+'</span></div><div class="kv">'+kv+'</div></div>';}
+let rcPy='70',rcAth='A4',rcCall='NOAVOID';
+function dblTab(){return '<div class="card"><div class="theme">Companies at their all-time-high sales and profit where quarterly profit has also roughly doubled compared with the same quarter last year, for example Rs 10 Cr a year ago and Rs 17 to 20 Cr now. The default needs profit growth of 70 percent or more (1.7 times). Check why profit jumped: a one-off gain or a very low base can fake growth, so open the stock and read the quarter, the cost quality and the concall.</div></div><div id="recbox"></div>';}
+function renderRec(){
+ const el=document.getElementById('recbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderRec);return;}
+ const rows=U.filter(u=>athOkG(rcAth,u)&&u.py!=null&&u.py>=+rcPy&&callOkG(rcCall,u)).sort((a,b)=>b.py-a.py);
+ el.innerHTML=selH([['50','Profit growth: +50% or more (1.5x)'],['70','Profit growth: +70% or more (1.7x)'],['100','Profit growth: +100% or more (2x)'],['200','Profit growth: +200% or more (3x)']],rcPy,"rcPy=this.value;renderRec()")+selH(RECS,rcAth,"rcAth=this.value;renderRec()")+selH(CALLS,rcCall,"rcCall=this.value;renderRec()")+
+  '<h2>Record sales and profit, profit about doubled ('+rows.length+')</h2>'+(rows.length?rows.slice(0,60).map(u=>recRow(u,'dbl')).join(''):'<div class="empty">No stock matches yet. Try +50% or relax the records, and note this fills in as more stocks load.</div>');}
+let dsBand='30-50',dsPy='70',dsAth='A4',dsCall='NOAVOID';
+function discTab(){return '<div class="card"><div class="theme">The same rule as the Profit doubled tab (record sales and profit, profit about doubled), but the share price is 30 to 50 percent below its 52-week high. Either the market has not noticed yet, or it knows something you do not, such as a one-off profit, an expensive past run, weak cash flow, promoter selling or a cyclical peak. Read the risks on the stock before buying. The 52-week high is used because longer history is not loaded.</div></div><div id="discbox"></div>';}
+function renderDisc(){
+ const el=document.getElementById('discbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderDisc);return;}
+ const bd=dsBand.split('-').map(Number),lo=bd[0],hi=bd[1];
+ const rows=U.filter(u=>athOkG(dsAth,u)&&u.py!=null&&u.py>=+dsPy&&u.dd!=null&&u.dd>=lo&&u.dd<=hi&&callOkG(dsCall,u)).sort((a,b)=>b.py-a.py);
+ el.innerHTML=selH([['20-30','Discount: 20 to 30% below 52-week high'],['30-50','Discount: 30 to 50% below 52-week high'],['50-100','Discount: more than 50% below'],['20-100','Discount: 20% or more']],dsBand,"dsBand=this.value;renderDisc()")+selH([['0','Profit growth: any'],['30','Profit growth: +30% or more'],['70','Profit growth: +70% or more (1.7x)'],['100','Profit growth: +100% or more (2x)']],dsPy,"dsPy=this.value;renderDisc()")+selH(RECS,dsAth,"dsAth=this.value;renderDisc()")+selH(CALLS,dsCall,"dsCall=this.value;renderDisc()")+
+  '<h2>Records at a discount ('+rows.length+')</h2>'+(rows.length?rows.slice(0,60).map(u=>recRow(u,'disc')).join(''):'<div class="empty">No stock matches. This rule is strict, so loosen the profit growth or the discount.</div>');}
+let exFa='15',exAth='Q',exCall='NOAVOID';
+function expTab(){return '<div class="card"><div class="theme">Companies with record sales and profit that are also growing their capacity: fixed assets (including plant and machinery where Screener shows it) are rising, capital work in progress shows more is being built, and operating cash flow is growing. Expansion with record results often comes before the next leg of growth. Heavy expansion can also strain cash, so read the debt and cash flow on the stock.</div></div><div id="expbox"></div>';}
+function renderExp(){
+ const el=document.getElementById('expbox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderExp);return;}
+ const rows=U.filter(u=>athOkG(exAth,u)&&u.fy!=null&&u.fy>=+exFa&&(u.co==null||u.co>0)&&(u.cf==null||u.cf>0)&&callOkG(exCall,u)).sort((a,b)=>b.fy-a.fy);
+ el.innerHTML=selH([['10','Fixed assets growth: +10% or more'],['15','Fixed assets growth: +15% or more'],['25','Fixed assets growth: +25% or more'],['40','Fixed assets growth: +40% or more']],exFa,"exFa=this.value;renderExp()")+selH(RECS,exAth,"exAth=this.value;renderExp()")+selH(CALLS,exCall,"exCall=this.value;renderExp()")+
+  '<h2>Record results with expanding capacity ('+rows.length+')</h2>'+(rows.length?rows.slice(0,60).map(u=>recRow(u,'exp')).join(''):'<div class="empty">No stock matches yet. Loosen the filters, and note this fills in as more stocks load.</div>');}
+function btlTab(){
+ const B=D.bottlenecks||[],hc=h=>h==='High'?'g':h==='Medium'?'a':'b';
+ let h='<div class="card"><div class="theme">Where the world is short of something and Indian companies may benefit. Each card shows the chain (for example solar needs storage, which needs the grid, which needs transformers), why it is a chokepoint, the latest shortage, export-curb and lead-time headlines (the Heat badge counts alarming headlines in the last 30 days), and your loaded stocks that work in that area. The map of chokepoints is my own judgement and may be incomplete or out of date. Edit BOTTLENECKS in the script to change it.</div></div>';
+ return h+B.map(b=>'<div class="card"><div class="row"><div class="name">'+esc(b.title)+'</div><span class="badge '+hc(b.heat)+'">Heat: '+esc(b.heat)+'</span></div>'+
+  '<div class="sec">The chain</div><div style="font-size:13.5px">'+esc(b.chain)+'</div>'+
+  '<div class="sec g">Why it is a bottleneck</div><div style="font-size:13.5px">'+esc(b.why)+'</div>'+
+  '<div class="sec">What to look for in the companies</div><div style="font-size:13.5px">'+esc(b.look)+'</div>'+
+  '<details><summary>Latest headlines ('+(b.news||[]).length+')</summary>'+((b.news||[]).length?b.news.map(n=>'<a class="nw '+(n.alarm?'n':'')+'" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a>').join(''):'<div class="theme">No headlines yet.</div>')+'</details>'+
+  '<div class="sec">Indian stocks in this area ('+b.n+' loaded, best first)</div>'+((b.stocks||[]).length?b.stocks.map(s=>'<div class="row" style="padding:6px 0;border-top:1px solid var(--bd);cursor:pointer" onclick="openP(\''+esc(s.s)+'\')"><div><b>'+esc(s.n)+'</b><div class="theme">'+(s.c?'Rs '+Math.round(s.c).toLocaleString('en-IN')+' Cr | ':'')+'Quarter '+esc(s.rv||'-')+' | '+(s.tr==='A'?'5/5':s.tr==='B'?'4/5':s.tr==='C'?'3/5':'under 3/5')+' rules'+(s.mbc?' | '+esc(s.mbc):'')+'</div></div><span class="badge '+ccls(s.call)+'">'+esc(s.call)+'</span></div>').join(''):'<div class="theme">No stocks loaded in this area yet.</div>')+'</div>').join('');}
 let fuIdx=0,fuRule='3',fuCall='NOAVOID',fuSort='mb';
 function futureTab(){return '<div class="card"><div class="theme">Companies in technologies that could grow fast over the next 5 to 10 years: semiconductors, electronics and mobile parts, data centres, AI hardware and robotics, electric vehicles and batteries, solar and green hydrogen, nuclear, space and drones, advanced materials, 5G and fibre, medical devices, defence and aerospace. Pick an area to see its stocks, ranked here by the multibagger score. A company is placed in an area from its industry tags and from what its business description says, so a few may be misplaced.</div></div><div id="fubox"></div>';}
 function renderFuture(){
@@ -2875,7 +3098,7 @@ function brokersTab(){
  let h='<div class="card"><div class="theme">Where the big brokerages are building positions or turning positive, grouped by house (Kotak, ICICI Securities, Motilal Oswal, Axis, Nuvama, Jefferies and others). Headlines only, so open the article for the full note.</div></div>';
  h+=hs.map(w=>'<h2>'+esc(w)+' ('+H[w].length+')</h2>'+H[w].slice(0,12).map(n=>'<div class="card" style="padding:10px"><div class="row"><b style="cursor:pointer" onclick="openP(\''+esc(n.sym)+'\')">'+esc(n.name)+'</b><span class="badge '+ccls(n.scall)+'">'+esc(n.scall||'')+'</span></div><a class="nw '+(n.view>0?'p':n.view<0?'n':'')+'" style="border-top:0" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+bchips(n)+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a></div>').join('')).join('');
  return R.length?h:'<div class="empty">No brokerage headlines found yet.</div>';}
-function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,cap:capTab,mb:mbTab,future:futureTab,trig:trigTab,track:trackTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='cap')renderCap();if(tab==='mb')renderMb();if(tab==='future')renderFuture();if(tab==='trig')renderTrig();if(tab==='ow')renderOw();if(tab==='vol')renderVol();}
+function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,cap:capTab,dbl:dblTab,disc:discTab,exp:expTab,btl:btlTab,mb:mbTab,future:futureTab,trig:trigTab,track:trackTab,vol:volTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='cap')renderCap();if(tab==='dbl')renderRec();if(tab==='disc')renderDisc();if(tab==='exp')renderExp();if(tab==='mb')renderMb();if(tab==='future')renderFuture();if(tab==='trig')renderTrig();if(tab==='ow')renderOw();if(tab==='vol')renderVol();}
 nav();draw();
 </script></body></html>
 """
