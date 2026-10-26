@@ -71,7 +71,7 @@ CAP_BANDS = [("Micro cap", 0, 500), ("Small cap", 500, 5000), ("Mid cap", 5000, 
 FUTURE_AREAS = ["Semiconductors", "Electronics & EMS", "Data centers & cooling", "Robotics & AI hardware", "EV & batteries",
                 "Solar & renewables", "Green hydrogen & fuel cells", "Nuclear", "Space", "Drones & unmanned systems",
                 "Advanced materials & critical minerals", "Telecom, 5G & fibre", "Medical devices & biotech", "Defence", "Aerospace",
-                "Industrial automation & capital goods"]
+                "Industrial automation & capital goods", "Cybersecurity & data protection"]
 # Supply-chain chokepoints (my own judgement - edit freely). The "Bottlenecks" tab shows each one with live shortage headlines
 # and your loaded stocks that work in the listed areas (names must match AREAS keys).
 BOTTLENECKS = [
@@ -130,6 +130,8 @@ BOTTLENECKS = [
      "areas": ["Shipbuilding & marine", "Defence"],
      "queries": ["global shipbuilding capacity shortage order backlog", "India shipyard order naval commercial", "India shipbuilding scheme incentive"]},
 ]
+# True = rising debtor / inventory days stop a stock from being BUY (it becomes WAIT). Set False to allow BUY with a caution instead.
+WC_BLOCKS_BUY = True
 ONLY_THEMES = False   # False = scan ALL sectors (your 5 priority themes are still labelled separately)
 
 # keyword -> matched against Screener industry tags + company name
@@ -294,6 +296,15 @@ AREAS = {
         "drivers": "Government push to expand nuclear capacity, opening of the sector to private firms, small modular reactor plans, heavy-equipment and component orders.",
         "risks": "Very long project cycles, liability and approval uncertainty, state-utility customer concentration.",
         "queries": ["nuclear power India Cabinet approves", "small modular reactor India NPCIL private sector"]},
+    "Cybersecurity & data protection": {
+        "tags": [], "name": ["cyber", "quick heal", "infosec"],
+        "text": ["cyber security", "cybersecurity", "cyber-security", "information security", "endpoint security", "antivirus", "firewall",
+                 "data protection", "identity and access management", "managed security", "security operations centre",
+                 "security operations center", "encryption", "threat intelligence", "network security", "digital forensics",
+                 "cryptography", "fraud detection", "secure communication", "zero trust"],
+        "drivers": "Rising cyber attacks, compliance with the data-protection law, government and defence demand for secure systems, cloud and AI adoption, and bank and telecom spending on fraud and security.",
+        "risks": "Few pure-play listed companies, fast-changing technology, long enterprise sales cycles, global competition, and rich valuations.",
+        "queries": ["India cyber security order contract", "DPDP Act compliance demand India", "cybersecurity company India contract win"]},
     "Drones & unmanned systems": {
         "tags": [], "name": ["drone", "uav", "unmanned"],
         "text": ["drone", "uav", "unmanned aerial", "counter-drone", "loitering munition", "autonomous systems"],
@@ -1949,9 +1960,15 @@ def build_view(s, cyc):
             why.append("Policy tailwind: " + (cy.get("policy_top") or "strong government focus")[:100])
 
     score = max(0, min(100, round(score)))
+    # YOUR BUY RULE: latest quarter at an all-time high for sales AND profit, a profit breakout, an Excellent/Good quarter,
+    # a credit rating of A or better (if one exists), an uptrend, and (optionally) healthy working capital.
+    core = bool(f.get("ath_q_sales") and f.get("ath_q_profit") and f.get("profit_breakout"))
+    qual_ok = bool(rs and rs["verdict"] in ("Excellent", "Good"))
+    rt_ = (cr or {}).get("rating", "")
+    rating_ok = (not rt_) or (rt_[:1] == "A" and "Negative" not in rt_)
     if hard_avoid or score < 45 or (tier == "-" and score < 55):
         verdict = "Avoid"
-    elif score >= 70 and tier in ("A", "B") and m and wc_ok is not False:
+    elif core and qual_ok and rating_ok and m and (wc_ok is not False or not WC_BLOCKS_BUY) and score >= 55:
         verdict = "Bullish"
     else:
         verdict = "Watch"
@@ -1963,6 +1980,33 @@ def build_view(s, cyc):
         call = "HOLD" if ext else "BUY"
     else:
         call = "HOLD" if (tier in ("A", "B") and score >= 60 and ext) else "WAIT"
+    blockers, bcodes = [], []
+    def _b(code, text):
+        bcodes.append(code)
+        blockers.append(text)
+    if call != "BUY":
+        if call == "HOLD" and ext:
+            _b("ext", "Strong stock, but the price is extended: keep what you own and add only on a dip")
+        if not (f.get("ath_q_sales") and f.get("ath_q_profit")):
+            _b("qtr", "Latest quarter is not an all-time high for both sales and profit")
+        if not f.get("profit_breakout"):
+            _b("brk", "No profit breakout (quarterly profit is not up 25% or more on last year and above the last 4 quarters)")
+        if not qual_ok:
+            _b("qual", "Latest quarter is not rated Excellent or Good")
+        if not rating_ok:
+            _b("rating", f"Credit rating {rt_} is below A or has a negative outlook")
+        if not m:
+            _b("price", "No live price data yet")
+        elif d200_ and pr_ and pr_ < d200_ * 0.97:
+            _b("trend", "Price is below its 200-day average (downtrend)")
+        if wc_ok is False and WC_BLOCKS_BUY:
+            _b("wc", "Debtor or inventory days are rising (working capital stretching)")
+        if net <= -2:
+            _b("news", "Negative news headlines")
+        if score < 55:
+            _b("score", f"Overall score {score} is below 55")
+        if not blockers:
+            _b("flag", "A red flag such as very thin trading is holding it back")
 
     plan = {"stop": None, "maxw": 0, "entry": ""}
     if m and verdict != "Avoid":
@@ -2045,7 +2089,8 @@ def build_view(s, cyc):
         "watch": bool(s.get("watch")), "pledged": f.get("pledged"),
         "adx": adx_, "pdi": pdi_, "mdi": mdi_, "rs_rank": rk, "rs_nifty6m": m.get("rs_nifty6m"),
         "margin": mg, "cogs": cg, "accum": accum_info, "ret2d": m.get("ret2d"), "ret5d": m.get("ret5d"),
-        "call": call, "areas": s.get("areas", []), "mb": mb, "ord": ordd, "triggers": trg, "tscore": tscore, "cfo_ratio": cfo_r, "de": de_,
+        "call": call, "areas": s.get("areas", []), "why_not": blockers, "why_not_codes": bcodes, "core": core,
+        "mb": mb, "ord": ordd, "triggers": trg, "tscore": tscore, "cfo_ratio": cfo_r, "de": de_,
         "vol_max3": m.get("vol_max3"), "ath4": ath4, "athq": athq, "athy": athy, "annual": f.get("annual"), "dd": dd, "capex": cx, "expanding": expanding, "pn": pn_, "pa": pa_, "insider": s.get("insider") or [], "cagr": f.get("cagr"),
         "targets": [x["area"] for x in cc.get("targets", [])], "about": (s.get("about") or "")[:420],
         "customers": customers, "orders": s.get("orders", []),
@@ -2485,6 +2530,13 @@ def render(raw, state, alerts=True):
                 "tc": v["tscore"], "tk": sorted({x["k"] for x in v["triggers"]}),
                 "tl": [x["t"][:70] for x in sorted(v["triggers"], key=lambda x: -x["w"])][:3]} for v in views]
 
+    cand = [v for v in views if v["core"]]
+    tally = {}
+    for v in cand:
+        if v["call"] != "BUY":
+            for c_ in v["why_not_codes"]:
+                tally[c_] = tally.get(c_, 0) + 1
+    blk = {"core": len(cand), "buy": sum(v["call"] == "BUY" for v in cand), "tally": tally}
     btl = state.get("bottlenecks") or {}
     if demo and not btl:
         btl = {b["id"]: {"news": [{"title": f"Demo headline: supply of {b['title'].split(':')[0].lower()} stays tight, lead times stretch",
@@ -2542,6 +2594,7 @@ def render(raw, state, alerts=True):
                 "stocks": [{"name": v["name"], "sym": v["sym"], "theme": v["theme"], "verdict": v["verdict"], "items": v["pli"]}
                            for v in featured if v["pli"]]},
         "coverage": {"loaded": len(views), "universe": state.get("universe_n"), "note": state.get("scan_note", "")}, "caps": [{"name": n_, "lo": lo_, "hi": hi_} for n_, lo_, hi_ in CAP_BANDS], "track": track,
+        "blockers": blk,
         "bottlenecks": bt_out,
         "future": [{"name": n_, "drivers": AREAS[n_]["drivers"], "risks": AREAS[n_]["risks"]} for n_ in FUTURE_AREAS if n_ in AREAS],
         "stocks": featured, "accum": quiet, "news": news[:60], "areas": areas, "orders": orders,
@@ -2677,7 +2730,8 @@ def demo_data():
             s["f"]["mcap"] = 1200 + i * 90
         if i in (4, 6, 9):
             s["f"]["mcap"] = 300 + i * 20
-        s["areas"] = list(dict.fromkeys((s.get("areas") or []) + [FUTURE_AREAS[i % len(FUTURE_AREAS)], FUTURE_AREAS[(i + 5) % len(FUTURE_AREAS)]]))
+        s["areas"] = list(dict.fromkeys((s.get("areas") or []) + [FUTURE_AREAS[i % len(FUTURE_AREAS)], FUTURE_AREAS[(i + 5) % len(FUTURE_AREAS)]]
+                                       + (["Cybersecurity & data protection"] if i in (2, 7, 11) else [])))
         s["f"]["cfo_ratio"] = random.choice([0.95, 1.1, 0.3])
         s["f"]["capex"] = {"fa_yoy": random.uniform(-5, 45), "pm_yoy": random.uniform(0, 50), "cwip_pct": random.uniform(2, 35),
                            "cfo_now": random.uniform(40, 300), "cfo_yoy": random.uniform(-10, 50), "cfo_prev": 100}
@@ -2757,7 +2811,7 @@ const D=__DATA__;
 const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sg=(x,d=1)=>x==null?'-':(x>0?'+':'')+Number(x).toFixed(d)+'%';
 const vcls=v=>v==='Bullish'?'g':v==='Watch'?'a':'r';
-const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['buy','Big buying volume'],['qp','Quarterly profit'],['yp','Annual profit (YoY)'],['cap','Micro / Small / Mid cap'],['dbl','Profit doubled'],['disc','Records at discount'],['exp','Capacity expansion'],['btl','Bottlenecks'],['mb','Multibagger'],['future','Future tech'],['trig','Triggers'],['track','Track record'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
+const tabs=[['picks','Rule screen'],['best','Best picks / compare'],['buy','Big buying volume'],['qp','Quarterly profit'],['yp','Annual profit (YoY)'],['cap','Micro / Small / Mid cap'],['dbl','Profit doubled'],['disc','Records at discount'],['exp','Capacity expansion'],['btl','Bottlenecks'],['mb','Multibagger'],['future','Future tech'],['cyber','Cybersecurity'],['trig','Triggers'],['track','Track record'],['themes','All stocks by area'],['search','Search'],['results','Results'],['accum','Quiet accumulation'],['ow','Order winners'],['orders','Orders'],['big','Big money'],['brokers','Brokers'],['sectors','Sector cycle'],['focus','Focus / Avoid'],['news','News'],['policy','Policy'],['pli','PLI'],['dma','50/200 DMA']];
 let tab='picks',q='',th='';
 document.getElementById('upd').textContent='Updated '+D.updated+(D.full_at?'  |  fundamentals: '+D.full_at:'')+(D.coverage&&D.coverage.universe?'  |  Coverage: '+D.coverage.loaded+' of '+D.coverage.universe+' listed stocks loaded'+(D.coverage.note?' ('+D.coverage.note+')':''):'');
 const M=D.market||{};
@@ -2778,15 +2832,20 @@ function card(s){
  '<div><span>P/E</span> '+(s.pe?s.pe.toFixed(0):'-')+'</div><div><span>ROCE</span> '+(s.roce?s.roce.toFixed(0)+'%':'-')+'</div><div><span>50/200 gap</span> '+(s.dma_gap!=null?sg(s.dma_gap):'-')+'</div><div><span>Debtor days</span> '+wcv((s.wc||{}).debtor_prev,(s.wc||{}).debtor_days)+'</div><div><span>Inventory days</span> '+wcv((s.wc||{}).inv_prev,(s.wc||{}).inv_days)+'</div>'+(s.adx!=null?'<div><span>ADX</span> <b class="'+(s.adx>=30?'g':'')+'">'+Math.round(s.adx)+'</b></div>':'')+(s.rs_rank!=null?'<div><span>Rel. strength</span> <b class="'+(s.rs_rank>=80?'g':s.rs_rank<30?'r':'')+'">'+s.rs_rank+'/99</b></div>':'')+'</div>'+
  (why?'<div class="sec g">Why bullish</div><ul>'+why+'</ul>':'')+
  (whyMore?'<details><summary>More reasons</summary><ul>'+whyMore+'</ul></details>':'')+
- (risk?'<div class="sec r">Watch out</div><ul>'+risk+'</ul>':'')+
+ (s.why_not&&s.why_not.length&&s.call!=='BUY'?'<div class="sec a">Why not BUY yet</div><ul>'+s.why_not.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+(risk?'<div class="sec r">Watch out</div><ul>'+risk+'</ul>':'')+
  (p.stop?'<div class="plan"><b>Plan:</b> '+esc(p.entry)+'<br><b>Stop-loss:</b> Rs '+p.stop+(p.risk_pct?' ('+p.risk_pct+'% risk)':'')+(p.t1?' | <b>Targets:</b> Rs '+p.t1+' then Rs '+p.t2:'')+' | <b>Max weight:</b> '+p.maxw+'% of portfolio</div>':'')+
  (nw?'<details><summary>News ('+s.news.length+')</summary>'+nw+'</details>':'')+deep(s)+
  '<div class="links"><a href="'+esc(s.links.screener)+'" target="_blank" rel="noopener">Financials</a><a href="'+esc(s.links.chart)+'" target="_blank" rel="noopener">Chart</a><a href="'+esc(s.links.news)+'" target="_blank" rel="noopener">News</a></div></div>';
 }
+function bkCard(){
+ const b=D.blockers||{core:0,buy:0,tally:{}};
+ const nm={ext:'price extended',qtr:'latest quarter not an all-time high',brk:'no profit breakout',qual:'quarter not Excellent or Good',rating:'credit rating weak',trend:'price below 200-day average',wc:'debtor or inventory days rising',news:'negative news',score:'overall score under 55',price:'no live price',flag:'a red flag'};
+ const ks=Object.keys(b.tally||{}).sort((x,y)=>b.tally[y]-b.tally[x]);
+ return '<div class="card"><div class="sec g">Your BUY rule</div><div style="font-size:13.5px">A stock is BUY when its latest quarter is at an all-time high for both sales and profit, profit has broken out (up 25% or more on last year and above the last 4 quarters), the quarter is rated Excellent or Good, any credit rating is A or better, the price is in an uptrend, and debtor and inventory days are not rising. <b>'+b.core+'</b> loaded stocks pass the first rule, and <b class="g">'+b.buy+'</b> of them are BUY.</div>'+(ks.length?'<div class="theme" style="margin-top:6px">Held back from BUY: '+ks.map(k=>(nm[k]||k)+' ('+b.tally[k]+')').join(', ')+'</div>':'')+'</div>';}
 function picks(){
  const c=D.counts;let h='<div class="stats"><div class="stat"><b class="g">'+c.bullish+'</b><span>Bullish</span></div><div class="stat"><b>'+c.A+'</b><span>All 5 rules</span></div><div class="stat"><b>'+c.B+'</b><span>4 of 5</span></div><div class="stat"><b>'+c.candidates+'</b><span>Scanned</span></div></div>';
  const bull=D.stocks.filter(s=>s.verdict==='Bullish'),watch=D.stocks.filter(s=>s.verdict==='Watch'&&s.tier!=='C').slice(0,8);
- h+='<div class="card"><div class="sec g">Focus sectors now</div><div style="font-size:14px">'+(D.focus_themes.length?esc(D.focus_themes.join(', ')):'None clearly in an upcycle')+'</div><div class="sec r" style="margin-top:6px">Avoid / wait</div><div style="font-size:14px">'+esc(D.avoid_themes.join(', ')||'-')+'</div></div><h2>Bullish now</h2>'+(bull.length?bull.map(card).join(''):'<div class="empty">No stock passes every test right now. That is information too: patience beats forcing a trade.</div>');
+ h+='<div class="card"><div class="sec g">Focus sectors now</div><div style="font-size:14px">'+(D.focus_themes.length?esc(D.focus_themes.join(', ')):'None clearly in an upcycle')+'</div><div class="sec r" style="margin-top:6px">Avoid / wait</div><div style="font-size:14px">'+esc(D.avoid_themes.join(', ')||'-')+'</div></div>'+bkCard()+'<h2>Bullish now</h2>'+(bull.length?bull.map(card).join(''):'<div class="empty">No stock passes every test right now. That is information too: patience beats forcing a trade.</div>');
  if(watch.length)h+='<h2>Watchlist - wait for a trigger</h2>'+watch.map(card).join('');
  return h;}
 function sectors(){return D.sectors.map(c=>{
@@ -2925,6 +2984,22 @@ function btlTab(){
   '<div class="sec">What to look for in the companies</div><div style="font-size:13.5px">'+esc(b.look)+'</div>'+
   '<details><summary>Latest headlines ('+(b.news||[]).length+')</summary>'+((b.news||[]).length?b.news.map(n=>'<a class="nw '+(n.alarm?'n':'')+'" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a>').join(''):'<div class="theme">No headlines yet.</div>')+'</details>'+
   '<div class="sec">Indian stocks in this area ('+b.n+' loaded, best first)</div>'+((b.stocks||[]).length?b.stocks.map(s=>'<div class="row" style="padding:6px 0;border-top:1px solid var(--bd);cursor:pointer" onclick="openP(\''+esc(s.s)+'\')"><div><b>'+esc(s.n)+'</b><div class="theme">'+(s.c?'Rs '+Math.round(s.c).toLocaleString('en-IN')+' Cr | ':'')+'Quarter '+esc(s.rv||'-')+' | '+(s.tr==='A'?'5/5':s.tr==='B'?'4/5':s.tr==='C'?'3/5':'under 3/5')+' rules'+(s.mbc?' | '+esc(s.mbc):'')+'</div></div><span class="badge '+ccls(s.call)+'">'+esc(s.call)+'</span></div>').join(''):'<div class="theme">No stocks loaded in this area yet.</div>')+'</div>').join('');}
+let cyRec='ANY',cyCall='NOAVOID',cyCap='ALL',cySort='sc';
+const CYA='Cybersecurity & data protection';
+function cyberTab(){return '<div class="card"><div class="theme">Listed Indian companies in cybersecurity and data protection: security software and services, fraud detection, encryption and secure communication. They get the same BUY / HOLD / WAIT / AVOID call and the same rules as every other stock: record quarterly sales and profit, a profit breakout, an Excellent or Good quarter, any credit rating, trend and working capital. A company is placed here from its industry tags and its business description, so a few may be misplaced and some may be missing.</div></div><div id="cybox"></div>';}
+function renderCyber(){
+ const el=document.getElementById('cybox');if(!el)return;
+ if(!U){el.innerHTML='<div class="empty">Loading all stocks...</div>';loadUniv().then(renderCyber);return;}
+ const F=(D.future||[]).find(a=>a.name===CYA)||{};
+ const all=U.filter(u=>(u.a||[]).indexOf(CYA)>=0);
+ const rows=all.filter(u=>athOkG(cyRec,u)&&callOkG(cyCall,u)&&capOkG(cyCap,u));
+ const key={sc:u=>u.sc,py:u=>u.py==null?-9999:u.py,mb:u=>u.mb||0,rs:u=>u.rs==null?-1:u.rs,tc:u=>u.tc||0}[cySort]||(u=>u.sc);
+ rows.sort((a,b)=>key(b)-key(a));
+ let h='<div class="card" style="padding:10px"><div class="sec g">Why this area</div><div style="font-size:13.5px">'+esc(F.drivers||'')+'</div><div class="sec r">Risks</div><div style="font-size:13.5px">'+esc(F.risks||'')+'</div></div>';
+ h+='<div class="stats"><div class="stat"><b>'+all.length+'</b><span>Stocks</span></div><div class="stat"><b class="g">'+all.filter(u=>u.v==='BUY').length+'</b><span>BUY</span></div><div class="stat"><b class="a">'+all.filter(u=>u.aq).length+'</b><span>Quarter records</span></div><div class="stat"><b class="g">'+all.filter(u=>u.mbc==='MULTIBAGGER BUY').length+'</b><span>Multibagger</span></div></div>';
+ h+=selH(RECS,cyRec,"cyRec=this.value;renderCyber()")+selH(CALLS,cyCall,"cyCall=this.value;renderCyber()")+capSelH(cyCap,"cyCap=this.value;renderCyber()")+selH([['sc','Sort: overall score'],['py','Sort: profit growth'],['mb','Sort: multibagger score'],['rs','Sort: relative strength'],['tc','Sort: triggers']],cySort,"cySort=this.value;renderCyber()");
+ h+='<h2>Cybersecurity stocks ('+rows.length+')</h2>'+(rows.length?rows.slice(0,60).map(capRow).join(''):'<div class="empty">'+(all.length?'No stock matches the filters. Loosen them.':'No cybersecurity stock is loaded yet. A company appears here when its business description mentions cybersecurity. This fills in as more stocks load.')+'</div>');
+ el.innerHTML=h;}
 let fuIdx=0,fuRule='3',fuCall='NOAVOID',fuSort='mb';
 function futureTab(){return '<div class="card"><div class="theme">Companies in technologies that could grow fast over the next 5 to 10 years: semiconductors, electronics and mobile parts, data centres, AI hardware and robotics, electric vehicles and batteries, solar and green hydrogen, nuclear, space and drones, advanced materials, 5G and fibre, medical devices, defence and aerospace. Pick an area to see its stocks, ranked here by the multibagger score. A company is placed in an area from its industry tags and from what its business description says, so a few may be misplaced.</div></div><div id="fubox"></div>';}
 function renderFuture(){
@@ -3186,7 +3261,7 @@ function brokersTab(){
  let h='<div class="card"><div class="theme">Where the big brokerages are building positions or turning positive, grouped by house (Kotak, ICICI Securities, Motilal Oswal, Axis, Nuvama, Jefferies and others). Headlines only, so open the article for the full note.</div></div>';
  h+=hs.map(w=>'<h2>'+esc(w)+' ('+H[w].length+')</h2>'+H[w].slice(0,12).map(n=>'<div class="card" style="padding:10px"><div class="row"><b style="cursor:pointer" onclick="openP(\''+esc(n.sym)+'\')">'+esc(n.name)+'</b><span class="badge '+ccls(n.scall)+'">'+esc(n.scall||'')+'</span></div><a class="nw '+(n.view>0?'p':n.view<0?'n':'')+'" style="border-top:0" href="'+esc(n.link)+'" target="_blank" rel="noopener">'+bchips(n)+esc(n.title)+' <small>'+esc(n.src)+' | '+esc(n.ago)+'</small></a></div>').join('')).join('');
  return R.length?h:'<div class="empty">No brokerage headlines found yet.</div>';}
-function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,buy:buyTab,qp:qpTab,yp:ypTab,cap:capTab,dbl:dblTab,disc:discTab,exp:expTab,btl:btlTab,mb:mbTab,future:futureTab,trig:trigTab,track:trackTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='buy')renderBuy();if(tab==='qp')renderQp();if(tab==='yp')renderYp();if(tab==='cap')renderCap();if(tab==='dbl')renderRec();if(tab==='disc')renderDisc();if(tab==='exp')renderExp();if(tab==='mb')renderMb();if(tab==='future')renderFuture();if(tab==='trig')renderTrig();if(tab==='ow')renderOw();}
+function draw(){const a=document.getElementById('app');a.innerHTML=({picks,best:bestTab,buy:buyTab,qp:qpTab,yp:ypTab,cap:capTab,dbl:dblTab,disc:discTab,exp:expTab,btl:btlTab,mb:mbTab,future:futureTab,cyber:cyberTab,trig:trigTab,track:trackTab,themes:themesTab,search:searchTab,results:resultsTab,accum:accumTab,ow:owTab,orders:ordersTab,big:bigTab,brokers:brokersTab,sectors,focus,news:newsTab,policy:policyTab,pli:pliTab,dma:dmaTab})[tab]()+'<div class="disc">Educational screening aid, not investment advice. BUY / WAIT / AVOID is an automatic score from public data (Screener.in, Yahoo Finance, Google News, company filings) that can be delayed or wrong. Do your own research and manage risk.</div>';if(tab==='search')sres();if(tab==='themes')renderThemes();if(tab==='best')renderBest();if(tab==='buy')renderBuy();if(tab==='qp')renderQp();if(tab==='yp')renderYp();if(tab==='cap')renderCap();if(tab==='dbl')renderRec();if(tab==='disc')renderDisc();if(tab==='exp')renderExp();if(tab==='mb')renderMb();if(tab==='future')renderFuture();if(tab==='cyber')renderCyber();if(tab==='trig')renderTrig();if(tab==='ow')renderOw();}
 nav();draw();
 </script></body></html>
 """
